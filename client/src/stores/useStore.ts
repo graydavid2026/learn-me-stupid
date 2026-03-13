@@ -134,7 +134,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   selectTopic: (id) => {
-    set({ selectedTopicId: id, cardSets: [] });
+    set({ selectedTopicId: id, cardSets: [], cards: [], editingCard: null, showCardEditor: false });
     if (id) get().fetchCardSets(id);
   },
 

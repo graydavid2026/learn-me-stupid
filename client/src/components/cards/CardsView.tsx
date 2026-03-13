@@ -56,6 +56,7 @@ export function CardsView() {
 
   useEffect(() => {
     if (selectedTopicId) fetchCardSets(selectedTopicId);
+    setExpandedSetId(null);
   }, [selectedTopicId, fetchCardSets]);
 
   useEffect(() => {
