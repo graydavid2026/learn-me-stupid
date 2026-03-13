@@ -216,6 +216,27 @@ router.get('/stats', (req, res) => {
   }
 });
 
+// GET /api/study/history — Daily review counts for charts
+router.get('/history', (req, res) => {
+  try {
+    const days = Math.min(Number(req.query.days) || 30, 365);
+    const rows = queryAll(
+      `SELECT date(reviewed_at) as day,
+              COUNT(*) as total,
+              SUM(CASE WHEN result = 'correct' THEN 1 ELSE 0 END) as correct
+       FROM review_log
+       WHERE reviewed_at >= date('now', '-' || ? || ' days')
+       GROUP BY date(reviewed_at)
+       ORDER BY day`,
+      [days]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('Error fetching history:', err);
+    res.status(500).json({ error: 'Failed to fetch review history' });
+  }
+});
+
 // POST /api/study/review — Submit a review
 router.post('/review', (req, res) => {
   try {

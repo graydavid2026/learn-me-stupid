@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { GraduationCap, RotateCcw, Check, X, ChevronRight, Play, Filter, Zap, Clock, Target } from 'lucide-react';
 import { useStore, CardFull, MediaBlock } from '../../stores/useStore';
 
@@ -323,22 +324,38 @@ export function StudyView() {
           </div>
 
           {/* Card content */}
-          <div className="flex-1 flex flex-col items-center justify-center space-y-4">
-            {!flipped ? (
-              <>
-                <div className="text-xs uppercase tracking-wider text-gray-500 mb-2">Front</div>
-                {currentCard.front.media_blocks.map((block) => (
-                  <MediaBlockRenderer key={block.id} block={block} />
-                ))}
-              </>
-            ) : (
-              <>
-                <div className="text-xs uppercase tracking-wider text-gray-500 mb-2">Answer</div>
-                {currentCard.back.media_blocks.map((block) => (
-                  <MediaBlockRenderer key={block.id} block={block} />
-                ))}
-              </>
-            )}
+          <div className="flex-1 flex flex-col items-center justify-center space-y-4 overflow-hidden">
+            <AnimatePresence mode="wait">
+              {!flipped ? (
+                <motion.div
+                  key="front"
+                  initial={{ rotateY: 90, opacity: 0 }}
+                  animate={{ rotateY: 0, opacity: 1 }}
+                  exit={{ rotateY: -90, opacity: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="w-full text-center space-y-4"
+                >
+                  <div className="text-xs uppercase tracking-wider text-gray-500 mb-2">Front</div>
+                  {currentCard.front.media_blocks.map((block) => (
+                    <MediaBlockRenderer key={block.id} block={block} />
+                  ))}
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="back"
+                  initial={{ rotateY: 90, opacity: 0 }}
+                  animate={{ rotateY: 0, opacity: 1 }}
+                  exit={{ rotateY: -90, opacity: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="w-full text-center space-y-4"
+                >
+                  <div className="text-xs uppercase tracking-wider text-gray-500 mb-2">Answer</div>
+                  {currentCard.back.media_blocks.map((block) => (
+                    <MediaBlockRenderer key={block.id} block={block} />
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* Divider */}

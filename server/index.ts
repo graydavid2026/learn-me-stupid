@@ -10,6 +10,7 @@ import setsRouter from './routes/sets.js';
 import cardsRouter from './routes/cards.js';
 import mediaRouter from './routes/media.js';
 import studyRouter from './routes/study.js';
+import searchRouter from './routes/search.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -25,6 +26,7 @@ app.use('/api', setsRouter);
 app.use('/api', cardsRouter);
 app.use('/api/media', mediaRouter);
 app.use('/api/study', studyRouter);
+app.use('/api/search', searchRouter);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
