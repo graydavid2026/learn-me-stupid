@@ -67,6 +67,7 @@ interface SideEditorProps {
 
 function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorProps) {
   const [showAddMenu, setShowAddMenu] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const addBlock = (type: BlockType) => {
     onBlocksChange([...blocks, newBlock(type)]);
@@ -84,8 +85,6 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
 
   const handleFileUpload = async (index: number, file: File) => {
     if (!cardSideId) {
-      // For new cards, we'll just store a placeholder — file upload happens after card creation
-      // For now, show the file name as a preview indicator
       updateBlock(index, {
         file_name: file.name,
         file_size: file.size,
@@ -123,25 +122,53 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
     }
   }, [cardSideId, blocks]);
 
-  const handlePaste = useCallback((e: React.ClipboardEvent, index: number) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    for (const item of items) {
-      if (item.type.startsWith('image/')) {
-        const blob = item.getAsFile();
-        if (blob) {
+  // Global paste listener for image blocks — works regardless of focus
+  useEffect(() => {
+    function handleGlobalPaste(e: ClipboardEvent) {
+      // Don't intercept if user is typing in an input/textarea
+      const active = document.activeElement;
+      if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
+
+      // Check if paste is within this side editor
+      if (!containerRef.current?.contains(active || e.target as Node)) return;
+
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          const blob = item.getAsFile();
+          if (!blob) continue;
           e.preventDefault();
-          handleFileUpload(index, new File([blob], `clipboard-${Date.now()}.png`, { type: blob.type }));
+
+          // Find first image block without a file, or add a new one
+          const imageIndex = blocks.findIndex((b) => b.block_type === 'image' && !b.file_path && !b.file_name);
+          if (imageIndex >= 0) {
+            handleFileUpload(imageIndex, new File([blob], `clipboard-${Date.now()}.png`, { type: blob.type }));
+          } else {
+            // Auto-add an image block and upload to it
+            const newImg = newBlock('image');
+            const newBlocks = [...blocks, newImg];
+            onBlocksChange(newBlocks);
+            // Upload after state update via setTimeout
+            const newIndex = newBlocks.length - 1;
+            setTimeout(() => {
+              handleFileUpload(newIndex, new File([blob], `clipboard-${Date.now()}.png`, { type: blob.type }));
+            }, 0);
+          }
+          break;
         }
-        break;
       }
     }
-  }, [cardSideId, blocks]);
+
+    document.addEventListener('paste', handleGlobalPaste);
+    return () => document.removeEventListener('paste', handleGlobalPaste);
+  }, [blocks, cardSideId, onBlocksChange]);
 
   return (
     <div>
       <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">{label}</h3>
-      <div className="bg-surface-base rounded-lg border border-border p-3 space-y-2 min-h-[80px]">
+      <div ref={containerRef} className="bg-surface-base rounded-lg border border-border p-3 space-y-2 min-h-[80px]">
         {blocks.map((block, index) => {
           const Icon = blockTypeIcons[block.block_type];
           return (
@@ -169,10 +196,24 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
 
                 {(block.block_type === 'image' || block.block_type === 'audio' || block.block_type === 'video') && (
                   <div
+                    tabIndex={0}
                     onDrop={(e) => handleDrop(e, index)}
                     onDragOver={(e) => e.preventDefault()}
-                    onPaste={(e) => handlePaste(e, index)}
-                    className="border-2 border-dashed border-border rounded-lg p-4 text-center hover:border-accent/50 transition-colors"
+                    onPaste={(e) => {
+                      const items = e.clipboardData?.items;
+                      if (!items) return;
+                      for (const item of items) {
+                        if (item.type.startsWith('image/') || item.type.startsWith('audio/') || item.type.startsWith('video/')) {
+                          const blob = item.getAsFile();
+                          if (blob) {
+                            e.preventDefault();
+                            handleFileUpload(index, new File([blob], `clipboard-${Date.now()}.${item.type.split('/')[1]}`, { type: blob.type }));
+                          }
+                          break;
+                        }
+                      }
+                    }}
+                    className="border-2 border-dashed border-border rounded-lg p-4 text-center hover:border-accent/50 transition-colors focus:border-accent/50 focus:outline-none cursor-pointer"
                   >
                     {block.file_path ? (
                       <div>
@@ -228,6 +269,15 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
                         const url = e.target.value;
                         const embedId = extractYouTubeId(url);
                         updateBlock(index, { youtube_url: url, youtube_embed_id: embedId });
+                      }}
+                      onPaste={(e) => {
+                        // Get pasted text directly from clipboard for immediate processing
+                        const pastedText = e.clipboardData.getData('text');
+                        if (pastedText) {
+                          e.preventDefault();
+                          const embedId = extractYouTubeId(pastedText);
+                          updateBlock(index, { youtube_url: pastedText, youtube_embed_id: embedId });
+                        }
                       }}
                       placeholder="Paste YouTube URL..."
                       className="w-full input"
