@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Plus, GripVertical, Trash2, Type, Image, Music, Video, Youtube, Upload, ChevronDown } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { X, Plus, GripVertical, Trash2, Type, Image, Music, Video, Youtube, Upload, ChevronDown, Clipboard } from 'lucide-react';
 import { useStore, MediaBlock, CardFull } from '../../stores/useStore';
 
 type BlockType = 'text' | 'image' | 'audio' | 'video' | 'youtube';
@@ -14,6 +14,8 @@ interface EditableBlock {
   mime_type: string | null;
   youtube_url: string;
   youtube_embed_id: string | null;
+  // For pending file uploads (new cards without a side ID yet)
+  pendingFile?: File;
 }
 
 function newBlock(type: BlockType): EditableBlock {
@@ -67,7 +69,6 @@ interface SideEditorProps {
 
 function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorProps) {
   const [showAddMenu, setShowAddMenu] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   const addBlock = (type: BlockType) => {
     onBlocksChange([...blocks, newBlock(type)]);
@@ -83,12 +84,14 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
     onBlocksChange(blocks.filter((_, i) => i !== index));
   };
 
-  const handleFileUpload = async (index: number, file: File) => {
+  const uploadFile = async (index: number, file: File) => {
     if (!cardSideId) {
+      // New card — store file reference, will upload after card creation
       updateBlock(index, {
         file_name: file.name,
         file_size: file.size,
         mime_type: file.type,
+        pendingFile: file,
       });
       return;
     }
@@ -114,61 +117,38 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
     }
   };
 
-  const handleDrop = useCallback((e: React.DragEvent, index: number) => {
-    e.preventDefault();
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
-      handleFileUpload(index, files[0]);
-    }
-  }, [cardSideId, blocks]);
+  // Handle paste on the entire side editor area
+  const handlePasteOnImage = (e: React.ClipboardEvent, index: number) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
 
-  // Global paste listener for image blocks — works regardless of focus
-  useEffect(() => {
-    function handleGlobalPaste(e: ClipboardEvent) {
-      // Don't intercept if user is typing in an input/textarea
-      const active = document.activeElement;
-      if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
-
-      // Check if paste is within this side editor
-      if (!containerRef.current?.contains(active || e.target as Node)) return;
-
-      const items = e.clipboardData?.items;
-      if (!items) return;
-
-      for (const item of items) {
-        if (item.type.startsWith('image/')) {
-          const blob = item.getAsFile();
-          if (!blob) continue;
+    for (const item of items) {
+      if (item.type.startsWith('image/') || item.type.startsWith('audio/') || item.type.startsWith('video/')) {
+        const blob = item.getAsFile();
+        if (blob) {
           e.preventDefault();
-
-          // Find first image block without a file, or add a new one
-          const imageIndex = blocks.findIndex((b) => b.block_type === 'image' && !b.file_path && !b.file_name);
-          if (imageIndex >= 0) {
-            handleFileUpload(imageIndex, new File([blob], `clipboard-${Date.now()}.png`, { type: blob.type }));
-          } else {
-            // Auto-add an image block and upload to it
-            const newImg = newBlock('image');
-            const newBlocks = [...blocks, newImg];
-            onBlocksChange(newBlocks);
-            // Upload after state update via setTimeout
-            const newIndex = newBlocks.length - 1;
-            setTimeout(() => {
-              handleFileUpload(newIndex, new File([blob], `clipboard-${Date.now()}.png`, { type: blob.type }));
-            }, 0);
-          }
-          break;
+          e.stopPropagation();
+          const ext = item.type.split('/')[1] || 'png';
+          uploadFile(index, new File([blob], `clipboard-${Date.now()}.${ext}`, { type: blob.type }));
         }
+        return;
       }
     }
 
-    document.addEventListener('paste', handleGlobalPaste);
-    return () => document.removeEventListener('paste', handleGlobalPaste);
-  }, [blocks, cardSideId, onBlocksChange]);
+    // If clipboard has text and this is an image block, check if it's a URL
+    const text = e.clipboardData?.getData('text');
+    if (text && text.startsWith('http')) {
+      // Could be an image URL — store as file_name for reference
+      e.preventDefault();
+      e.stopPropagation();
+      updateBlock(index, { file_name: text });
+    }
+  };
 
   return (
     <div>
       <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">{label}</h3>
-      <div ref={containerRef} className="bg-surface-base rounded-lg border border-border p-3 space-y-2 min-h-[80px]">
+      <div className="bg-surface-base rounded-lg border border-border p-3 space-y-2 min-h-[80px]">
         {blocks.map((block, index) => {
           const Icon = blockTypeIcons[block.block_type];
           return (
@@ -179,11 +159,12 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
               </div>
 
               <div className="flex-1 min-w-0">
+                {/* TEXT BLOCK */}
                 {block.block_type === 'text' && (
                   <textarea
                     value={block.text_content}
                     onChange={(e) => updateBlock(index, { text_content: e.target.value })}
-                    placeholder="Enter text content..."
+                    placeholder="Enter text content... (paste text with Ctrl+V)"
                     className="w-full input resize-none min-h-[60px]"
                     rows={2}
                     onInput={(e) => {
@@ -194,29 +175,19 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
                   />
                 )}
 
+                {/* IMAGE / AUDIO / VIDEO BLOCK */}
                 {(block.block_type === 'image' || block.block_type === 'audio' || block.block_type === 'video') && (
                   <div
-                    tabIndex={0}
-                    onDrop={(e) => handleDrop(e, index)}
-                    onDragOver={(e) => e.preventDefault()}
-                    onPaste={(e) => {
-                      const items = e.clipboardData?.items;
-                      if (!items) return;
-                      for (const item of items) {
-                        if (item.type.startsWith('image/') || item.type.startsWith('audio/') || item.type.startsWith('video/')) {
-                          const blob = item.getAsFile();
-                          if (blob) {
-                            e.preventDefault();
-                            handleFileUpload(index, new File([blob], `clipboard-${Date.now()}.${item.type.split('/')[1]}`, { type: blob.type }));
-                          }
-                          break;
-                        }
-                      }
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const files = Array.from(e.dataTransfer.files);
+                      if (files.length > 0) uploadFile(index, files[0]);
                     }}
-                    className="border-2 border-dashed border-border rounded-lg p-4 text-center hover:border-accent/50 transition-colors focus:border-accent/50 focus:outline-none cursor-pointer"
+                    onDragOver={(e) => e.preventDefault()}
+                    className="border-2 border-dashed border-border rounded-lg text-center hover:border-accent/50 transition-colors relative"
                   >
                     {block.file_path ? (
-                      <div>
+                      <div className="p-4">
                         {block.block_type === 'image' && (
                           <img src={`/uploads/${block.file_path}`} alt="" className="max-h-40 mx-auto rounded" />
                         )}
@@ -229,37 +200,58 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
                         <p className="text-xs text-gray-500 mt-2">{block.file_name}</p>
                       </div>
                     ) : block.file_name ? (
-                      <div className="text-sm text-gray-400">
+                      <div className="text-sm text-gray-400 p-4">
                         <p>{block.file_name}</p>
-                        <p className="text-xs text-gray-500">Will be uploaded on save</p>
+                        <p className="text-xs text-gray-500">Ready to upload on save</p>
                       </div>
                     ) : (
-                      <label className="cursor-pointer">
-                        <Upload className="w-8 h-8 text-gray-600 mx-auto mb-2" />
-                        <p className="text-sm text-gray-400">
-                          Drop {block.block_type} here or <span className="text-accent">browse</span>
-                        </p>
-                        {block.block_type === 'image' && (
-                          <p className="text-xs text-gray-500 mt-1">PNG, JPG, WEBP, GIF — Max 10MB. Paste from clipboard supported.</p>
-                        )}
+                      <div className="p-4">
+                        {/* Hidden paste target — an invisible input that receives Ctrl+V */}
                         <input
-                          type="file"
-                          className="hidden"
-                          accept={
-                            block.block_type === 'image' ? 'image/png,image/jpeg,image/webp,image/gif' :
-                            block.block_type === 'audio' ? 'audio/mpeg,audio/wav,audio/ogg,audio/mp4' :
-                            'video/mp4,video/webm,video/quicktime'
-                          }
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) handleFileUpload(index, file);
+                          type="text"
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                          onPaste={(e) => handlePasteOnImage(e, index)}
+                          onKeyDown={(e) => {
+                            // Prevent typing visible characters — only allow paste
+                            if (!e.ctrlKey && !e.metaKey && e.key.length === 1) {
+                              e.preventDefault();
+                            }
                           }}
+                          onChange={() => {}} // prevent React warning
+                          value=""
+                          title={`Click here then Ctrl+V to paste ${block.block_type}`}
                         />
-                      </label>
+                        <Upload className="w-8 h-8 text-gray-600 mx-auto mb-2 pointer-events-none" />
+                        <p className="text-sm text-gray-400 pointer-events-none">
+                          Drop {block.block_type} here, <span className="text-accent">click to paste</span>, or
+                        </p>
+                        <label className="inline-block mt-2 cursor-pointer pointer-events-auto relative z-10">
+                          <span className="text-accent text-sm hover:text-accent-hover underline">browse files</span>
+                          <input
+                            type="file"
+                            className="hidden"
+                            accept={
+                              block.block_type === 'image' ? 'image/png,image/jpeg,image/webp,image/gif' :
+                              block.block_type === 'audio' ? 'audio/mpeg,audio/wav,audio/ogg,audio/mp4' :
+                              'video/mp4,video/webm,video/quicktime'
+                            }
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) uploadFile(index, file);
+                            }}
+                          />
+                        </label>
+                        {block.block_type === 'image' && (
+                          <p className="text-xs text-gray-500 mt-2 pointer-events-none">
+                            PNG, JPG, WEBP, GIF — Click area then Ctrl+V to paste screenshot
+                          </p>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}
 
+                {/* YOUTUBE BLOCK */}
                 {block.block_type === 'youtube' && (
                   <div>
                     <input
@@ -271,15 +263,15 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
                         updateBlock(index, { youtube_url: url, youtube_embed_id: embedId });
                       }}
                       onPaste={(e) => {
-                        // Get pasted text directly from clipboard for immediate processing
                         const pastedText = e.clipboardData.getData('text');
                         if (pastedText) {
                           e.preventDefault();
+                          e.stopPropagation();
                           const embedId = extractYouTubeId(pastedText);
                           updateBlock(index, { youtube_url: pastedText, youtube_embed_id: embedId });
                         }
                       }}
-                      placeholder="Paste YouTube URL..."
+                      placeholder="Paste YouTube URL here (Ctrl+V)..."
                       className="w-full input"
                     />
                     {block.youtube_embed_id && (
@@ -293,7 +285,7 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
                       </div>
                     )}
                     {block.youtube_url && !block.youtube_embed_id && (
-                      <p className="text-xs text-red-400 mt-1">Invalid YouTube URL</p>
+                      <p className="text-xs text-red-400 mt-1">Invalid YouTube URL — try pasting the full link</p>
                     )}
                   </div>
                 )}
@@ -353,7 +345,6 @@ export function CardEditor() {
 
   useEffect(() => {
     if (editingCard) {
-      // Populate from existing card
       setFrontBlocks(
         editingCard.front.media_blocks.map((b) => ({
           id: b.id,
@@ -383,7 +374,6 @@ export function CardEditor() {
       setTags(JSON.parse(editingCard.tags || '[]'));
       setSelectedSetId(editingCard.card_set_id);
     } else {
-      // New card — start with one text block per side
       setFrontBlocks([newBlock('text')]);
       setBackBlocks([newBlock('text')]);
       setTags([]);
@@ -459,9 +449,8 @@ export function CardEditor() {
           </button>
         </div>
 
-        {/* Body — scrollable */}
+        {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
-          {/* Front Side */}
           <SideEditor
             label="Front Side"
             blocks={frontBlocks}
@@ -469,7 +458,6 @@ export function CardEditor() {
             cardSideId={editingCard?.front?.id}
           />
 
-          {/* Back Side */}
           <SideEditor
             label="Back Side"
             blocks={backBlocks}
@@ -528,10 +516,7 @@ export function CardEditor() {
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border shrink-0">
-          <button
-            onClick={() => setShowCardEditor(false)}
-            className="btn-secondary"
-          >
+          <button onClick={() => setShowCardEditor(false)} className="btn-secondary">
             Cancel
           </button>
           <button
