@@ -7,6 +7,8 @@ import { initDb } from './db/index.js';
 import { migrate } from './db/migrate.js';
 import topicsRouter from './routes/topics.js';
 import setsRouter from './routes/sets.js';
+import cardsRouter from './routes/cards.js';
+import mediaRouter from './routes/media.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -19,6 +21,8 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use('/api/topics', topicsRouter);
 app.use('/api', setsRouter);
+app.use('/api', cardsRouter);
+app.use('/api/media', mediaRouter);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
