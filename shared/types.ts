@@ -1,0 +1,177 @@
+// === Database Row Types ===
+
+export interface Topic {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string;
+  icon: string;
+  parent_topic_id: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CardSet {
+  id: string;
+  topic_id: string;
+  name: string;
+  description: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Card {
+  id: string;
+  card_set_id: string;
+  sort_order: number;
+  tags: string; // JSON array string
+  created_at: string;
+  updated_at: string;
+  sr_tier: number;
+  sr_last_reviewed_at: string | null;
+  sr_next_due_at: string | null;
+  sr_consecutive_correct: number;
+  sr_consecutive_wrong: number;
+  sr_total_reviews: number;
+  sr_total_correct: number;
+  sr_is_active: number; // 0 or 1
+}
+
+export interface CardSide {
+  id: string;
+  card_id: string;
+  side: 0 | 1; // 0=front, 1=back
+  created_at: string;
+}
+
+export interface MediaBlock {
+  id: string;
+  card_side_id: string;
+  block_type: 'text' | 'image' | 'audio' | 'video' | 'youtube';
+  sort_order: number;
+  text_content: string | null;
+  file_path: string | null;
+  file_name: string | null;
+  file_size: number | null;
+  mime_type: string | null;
+  youtube_url: string | null;
+  youtube_embed_id: string | null;
+  created_at: string;
+}
+
+export interface MindmapNode {
+  id: string;
+  topic_id: string;
+  label: string;
+  node_type: 'topic' | 'card_set' | 'card' | 'custom';
+  ref_id: string | null;
+  x: number;
+  y: number;
+  color: string | null;
+  parent_node_id: string | null;
+  created_at: string;
+}
+
+export interface MindmapEdge {
+  id: string;
+  topic_id: string;
+  source_node_id: string;
+  target_node_id: string;
+  label: string | null;
+  edge_type: string;
+}
+
+export interface ReviewLog {
+  id: string;
+  card_id: string;
+  reviewed_at: string;
+  result: 'correct' | 'wrong';
+  tier_before: number;
+  tier_after: number;
+  response_time_ms: number | null;
+}
+
+// === API Response Types ===
+
+export interface TopicWithCounts extends Topic {
+  card_count: number;
+  due_count: number;
+}
+
+export interface CardSetWithCounts extends CardSet {
+  card_count: number;
+  due_count: number;
+}
+
+export interface CardFull extends Card {
+  front: CardSideFull;
+  back: CardSideFull;
+}
+
+export interface CardSideFull extends CardSide {
+  media_blocks: MediaBlock[];
+}
+
+// === API Request Types ===
+
+export interface CreateTopicRequest {
+  name: string;
+  description?: string;
+  color?: string;
+  icon?: string;
+  parent_topic_id?: string;
+}
+
+export interface UpdateTopicRequest {
+  name?: string;
+  description?: string;
+  color?: string;
+  icon?: string;
+  parent_topic_id?: string | null;
+  sort_order?: number;
+}
+
+export interface CreateCardSetRequest {
+  name: string;
+  description?: string;
+}
+
+export interface UpdateCardSetRequest {
+  name?: string;
+  description?: string;
+  sort_order?: number;
+}
+
+export interface ReviewRequest {
+  cardId: string;
+  result: 'correct' | 'wrong';
+  response_time_ms?: number;
+}
+
+// === SR Types ===
+
+export const TIER_LABELS: Record<number, string> = {
+  0: 'New',
+  1: '4h',
+  2: '1d',
+  3: '2d',
+  4: '1w',
+  5: '2w',
+  6: '1mo',
+  7: '3mo',
+  8: '6mo',
+};
+
+export const TIER_INTERVALS_MS: Record<number, number> = {
+  0: 0,
+  1: 4 * 60 * 60 * 1000,
+  2: 24 * 60 * 60 * 1000,
+  3: 2 * 24 * 60 * 60 * 1000,
+  4: 7 * 24 * 60 * 60 * 1000,
+  5: 14 * 24 * 60 * 60 * 1000,
+  6: 30 * 24 * 60 * 60 * 1000,
+  7: 90 * 24 * 60 * 60 * 1000,
+  8: 180 * 24 * 60 * 60 * 1000,
+};
