@@ -2,11 +2,8 @@ import { useStore, CardFull } from '../../stores/useStore';
 import { useEffect, useState } from 'react';
 import { Plus, FolderOpen, Trash2, Check, X, Pencil, ChevronRight, FileText, Layers } from 'lucide-react';
 import { CardEditor } from './CardEditor';
-
-const TIER_COLORS: Record<number, string> = {
-  0: '#ef4444', 1: '#f97316', 2: '#f59e0b', 3: '#eab308',
-  4: '#84cc16', 5: '#22c55e', 6: '#14b8a6', 7: '#06b6d4', 8: '#22c55e',
-};
+import { DeleteConfirmModal } from '../ui/DeleteConfirmModal';
+import { TIER_COLORS } from '../../utils/formatters';
 
 function TierDots({ tier }: { tier: number }) {
   return (
@@ -51,6 +48,7 @@ export function CardsView() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [expandedSetId, setExpandedSetId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ type: 'card' | 'set'; id: string; name: string } | null>(null);
 
   const selectedTopic = topics.find((t) => t.id === selectedTopicId);
 
@@ -205,9 +203,7 @@ export function CardsView() {
                           <Pencil className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => {
-                            if (confirm(`Delete "${set.name}" and all its cards?`)) deleteCardSet(set.id);
-                          }}
+                          onClick={() => setDeleteTarget({ type: 'set', id: set.id, name: set.name })}
                           className="p-1.5 text-gray-400 hover:text-red-400"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -258,7 +254,7 @@ export function CardsView() {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (confirm('Delete this card?')) deleteCard(card.id);
+                              setDeleteTarget({ type: 'card', id: card.id, name: getCardPreview(card).slice(0, 40) });
                             }}
                             className="p-1 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
                           >
@@ -277,6 +273,20 @@ export function CardsView() {
 
       {/* Card Editor Modal */}
       {showCardEditor && <CardEditor />}
+
+      {/* Delete Confirmation */}
+      {deleteTarget && (
+        <DeleteConfirmModal
+          itemName={deleteTarget.name}
+          itemType={deleteTarget.type}
+          onDelete={() => {
+            if (deleteTarget.type === 'set') deleteCardSet(deleteTarget.id);
+            else deleteCard(deleteTarget.id);
+            setDeleteTarget(null);
+          }}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
     </div>
   );
 }

@@ -2,11 +2,8 @@ import { useState, useEffect } from 'react';
 import { BarChart3, TrendingUp, Calendar, Flame, BookOpen, Target, Clock, Award, CalendarClock } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, Cell } from 'recharts';
 import { useStore } from '../../stores/useStore';
-
-const TIER_COLORS: Record<number, string> = {
-  0: '#ef4444', 1: '#f97316', 2: '#f59e0b', 3: '#eab308',
-  4: '#84cc16', 5: '#22c55e', 6: '#14b8a6', 7: '#06b6d4', 8: '#22c55e',
-};
+import { InfoTooltip } from '../ui/InfoTooltip';
+import { TIER_COLORS, HEAT_COLORS, getAccuracyHeat, getStreakHeat } from '../../utils/formatters';
 
 const TIER_LABELS: Record<number, string> = {
   0: 'New', 1: '4h', 2: '1d', 3: '2d', 4: '1w', 5: '2w', 6: '1mo', 7: '3mo', 8: '6mo',
@@ -30,12 +27,13 @@ interface DayHistory {
   correct: number;
 }
 
-function StatCard({ icon: Icon, label, value, color }: { icon: any; label: string; value: number | string; color?: string }) {
+function StatCard({ icon: Icon, label, value, color, tooltip }: { icon: any; label: string; value: number | string; color?: string; tooltip?: string }) {
   return (
     <div className="card p-4">
       <div className="flex items-center gap-2 mb-2">
         <Icon className="w-4 h-4 text-gray-500" />
         <span className="text-xs text-gray-400 uppercase tracking-wider">{label}</span>
+        {tooltip && <InfoTooltip fieldId={tooltip} />}
       </div>
       <p className="text-2xl font-bold font-mono" style={{ color: color || '#e5e7eb' }}>{value}</p>
     </div>
@@ -280,17 +278,17 @@ export function DashboardView() {
       {/* Overview Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
         <StatCard icon={BookOpen} label="Total Cards" value={stats.total} />
-        <StatCard icon={Clock} label="Due Today" value={stats.dueToday} color={stats.dueToday > 0 ? '#f59e0b' : undefined} />
-        <StatCard icon={Target} label="Mastered" value={stats.mastered} color="#22c55e" />
-        <StatCard icon={Flame} label="Streak" value={`${stats.streak} day${stats.streak !== 1 ? 's' : ''}`} color={stats.streak > 0 ? '#f59e0b' : undefined} />
+        <StatCard icon={Clock} label="Due Today" value={stats.dueToday} color={stats.dueToday > 0 ? '#f59e0b' : undefined} tooltip="due-today" />
+        <StatCard icon={Target} label="Mastered" value={stats.mastered} color="#22c55e" tooltip="mastered" />
+        <StatCard icon={Flame} label="Streak" value={`${stats.streak} day${stats.streak !== 1 ? 's' : ''}`} color={HEAT_COLORS[getStreakHeat(stats.streak)]} tooltip="streak" />
       </div>
 
       {/* Second row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
         <StatCard icon={Award} label="New Cards" value={stats.newCards} color="#ef4444" />
         <StatCard icon={TrendingUp} label="Reviewed Today" value={stats.reviewsToday} />
-        <StatCard icon={BarChart3} label="Today's Accuracy" value={`${accuracy}%`} color={accuracy >= 80 ? '#22c55e' : accuracy >= 50 ? '#f59e0b' : '#ef4444'} />
-        <StatCard icon={Calendar} label="Overdue" value={stats.overdue} color={stats.overdue > 0 ? '#ef4444' : undefined} />
+        <StatCard icon={BarChart3} label="Today's Accuracy" value={`${accuracy}%`} color={HEAT_COLORS[getAccuracyHeat(accuracy)]} tooltip="accuracy" />
+        <StatCard icon={Calendar} label="Overdue" value={stats.overdue} color={stats.overdue > 0 ? '#ef4444' : undefined} tooltip="overdue" />
       </div>
 
       {/* SR Timeline */}
