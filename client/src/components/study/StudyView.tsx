@@ -55,6 +55,8 @@ function MediaBlockRenderer({ block }: { block: MediaBlock }) {
             className="w-full h-full"
             allowFullScreen
             loading="lazy"
+            title="YouTube video"
+            sandbox="allow-scripts allow-same-origin allow-presentation"
           />
         </div>
       ) : null;

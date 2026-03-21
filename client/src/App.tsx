@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { AppShell } from './components/layout/AppShell';
 import { StudyView } from './components/study/StudyView';
 import { CardsView } from './components/cards/CardsView';
-import { MindMapView } from './components/mindmap/MindMapView';
+import { MemoryPalaceView } from './components/palace/MemoryPalaceView';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { SearchOverlay } from './components/layout/SearchOverlay';
 
@@ -25,7 +25,7 @@ export default function App() {
             <Route path="/" element={<Navigate to="/study" replace />} />
             <Route path="/study" element={<StudyView />} />
             <Route path="/cards" element={<CardsView />} />
-            <Route path="/mindmap" element={<MindMapView />} />
+            <Route path="/palace" element={<MemoryPalaceView />} />
             <Route path="/stats" element={<DashboardView />} />
           </Routes>
         </motion.div>

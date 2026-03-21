@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { X, Plus, GripVertical, Trash2, Type, Image, Music, Video, Youtube, Upload, ChevronDown, Clipboard } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { X, Plus, GripVertical, Trash2, Type, Image, Music, Video, Youtube, Upload, ChevronDown, Clipboard, Mic, Square, VideoIcon } from 'lucide-react';
 import { useStore, MediaBlock, CardFull } from '../../stores/useStore';
 
 type BlockType = 'text' | 'image' | 'audio' | 'video' | 'youtube';
@@ -42,6 +42,273 @@ function extractYouTubeId(url: string): string | null {
     if (match) return match[1];
   }
   return null;
+}
+
+/* ── Audio Recorder Hook ────────────────────────────── */
+function useAudioRecorder(onRecorded: (file: File) => void) {
+  const [recording, setRecording] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const start = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      chunksRef.current = [];
+      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        const file = new File([blob], `recording-${Date.now()}.webm`, { type: 'audio/webm' });
+        stream.getTracks().forEach((t) => t.stop());
+        onRecorded(file);
+      };
+      recorderRef.current = mediaRecorder;
+      mediaRecorder.start();
+      setRecording(true);
+      setElapsed(0);
+      timerRef.current = setInterval(() => setElapsed((s) => s + 1), 1000);
+    } catch (err) {
+      console.error('Microphone access denied:', err);
+    }
+  }, [onRecorded]);
+
+  const stop = useCallback(() => {
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+      recorderRef.current.stop();
+    }
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = null;
+    setRecording(false);
+    setElapsed(0);
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+        recorderRef.current.stream.getTracks().forEach((t) => t.stop());
+        recorderRef.current.stop();
+      }
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  const formatTime = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  return { recording, elapsed, formatTime, start, stop };
+}
+
+function AudioRecordButton({ onFile }: { onFile: (file: File) => void }) {
+  const { recording, elapsed, formatTime, start, stop } = useAudioRecorder(onFile);
+
+  if (recording) {
+    return (
+      <div className="flex items-center justify-center gap-3 py-2">
+        <span className="relative flex h-3 w-3">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
+          <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+        </span>
+        <span className="text-sm text-red-400 font-mono">Recording... {formatTime(elapsed)}</span>
+        <button
+          onClick={stop}
+          className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded-md text-sm transition-colors pointer-events-auto relative z-10"
+        >
+          <Square className="w-3.5 h-3.5 fill-current" />
+          Stop
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={start}
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-500/15 text-red-400 hover:bg-red-500/25 rounded-md text-sm transition-colors pointer-events-auto relative z-10"
+    >
+      <Mic className="w-4 h-4" />
+      Record Audio
+    </button>
+  );
+}
+
+/* ── Video Recorder Hook ────────────────────────────── */
+const MAX_VIDEO_SECONDS = 30;
+
+function useVideoRecorder(onRecorded: (file: File) => void) {
+  const [recording, setRecording] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [previewing, setPreviewing] = useState(false);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
+
+  const start = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      streamRef.current = stream;
+      setPreviewing(true);
+
+      // Show live preview
+      if (videoPreviewRef.current) {
+        videoPreviewRef.current.srcObject = stream;
+      }
+
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm',
+      });
+      chunksRef.current = [];
+      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+        const file = new File([blob], `video-${Date.now()}.webm`, { type: 'video/webm' });
+        stream.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+        setPreviewing(false);
+        onRecorded(file);
+      };
+      recorderRef.current = mediaRecorder;
+      mediaRecorder.start();
+      setRecording(true);
+      setElapsed(0);
+      timerRef.current = setInterval(() => {
+        setElapsed((s) => {
+          if (s + 1 >= MAX_VIDEO_SECONDS) {
+            // Auto-stop at 30 seconds
+            if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+              recorderRef.current.stop();
+            }
+            if (timerRef.current) clearInterval(timerRef.current);
+            timerRef.current = null;
+            setRecording(false);
+            return 0;
+          }
+          return s + 1;
+        });
+      }, 1000);
+    } catch (err) {
+      console.error('Camera access denied:', err);
+    }
+  }, [onRecorded]);
+
+  const stop = useCallback(() => {
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+      recorderRef.current.stop();
+    }
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = null;
+    setRecording(false);
+    setElapsed(0);
+  }, []);
+
+  const cancel = useCallback(() => {
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+      // Clear chunks so onstop doesn't produce a file
+      chunksRef.current = [];
+      recorderRef.current.onstop = () => {
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+        setPreviewing(false);
+      };
+      recorderRef.current.stop();
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = null;
+    setRecording(false);
+    setPreviewing(false);
+    setElapsed(0);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+        recorderRef.current.stream.getTracks().forEach((t) => t.stop());
+        recorderRef.current.stop();
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+      }
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  const formatTime = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  return { recording, previewing, elapsed, formatTime, start, stop, cancel, videoPreviewRef };
+}
+
+function VideoRecordButton({ onFile }: { onFile: (file: File) => void }) {
+  const { recording, previewing, elapsed, formatTime, start, stop, cancel, videoPreviewRef } = useVideoRecorder(onFile);
+
+  if (previewing || recording) {
+    return (
+      <div className="space-y-2">
+        <div className="relative rounded-lg overflow-hidden bg-black aspect-video max-h-40">
+          <video
+            ref={videoPreviewRef}
+            autoPlay
+            muted
+            playsInline
+            className="w-full h-full object-cover"
+            // Set srcObject when ref attaches
+            onLoadedMetadata={(e) => (e.target as HTMLVideoElement).play()}
+          />
+          {recording && (
+            <div className="absolute top-2 right-2 flex items-center gap-1.5 bg-black/70 px-2 py-1 rounded-full">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
+              </span>
+              <span className="text-xs text-red-400 font-mono">{formatTime(elapsed)} / 0:{MAX_VIDEO_SECONDS.toString().padStart(2, '0')}</span>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center justify-center gap-2">
+          {recording ? (
+            <button
+              onClick={stop}
+              className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded-md text-sm transition-colors pointer-events-auto relative z-10"
+            >
+              <Square className="w-3.5 h-3.5 fill-current" />
+              Stop
+            </button>
+          ) : null}
+          <button
+            onClick={cancel}
+            className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-500/20 text-gray-400 hover:bg-gray-500/30 rounded-md text-sm transition-colors pointer-events-auto relative z-10"
+          >
+            <X className="w-3.5 h-3.5" />
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={start}
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 rounded-md text-sm transition-colors pointer-events-auto relative z-10"
+    >
+      <VideoIcon className="w-4 h-4" />
+      Record Video (max {MAX_VIDEO_SECONDS}s)
+    </button>
+  );
 }
 
 const blockTypeIcons: Record<BlockType, typeof Type> = {
@@ -246,6 +513,26 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
                             PNG, JPG, WEBP, GIF — Click area then Ctrl+V to paste screenshot
                           </p>
                         )}
+                        {block.block_type === 'audio' && (
+                          <div className="mt-3 pointer-events-auto">
+                            <div className="flex items-center gap-2 justify-center text-gray-600 text-xs mb-2 pointer-events-none">
+                              <span className="flex-1 border-t border-gray-700" />
+                              <span>or</span>
+                              <span className="flex-1 border-t border-gray-700" />
+                            </div>
+                            <AudioRecordButton onFile={(file) => uploadFile(index, file)} />
+                          </div>
+                        )}
+                        {block.block_type === 'video' && (
+                          <div className="mt-3 pointer-events-auto">
+                            <div className="flex items-center gap-2 justify-center text-gray-600 text-xs mb-2 pointer-events-none">
+                              <span className="flex-1 border-t border-gray-700" />
+                              <span>or</span>
+                              <span className="flex-1 border-t border-gray-700" />
+                            </div>
+                            <VideoRecordButton onFile={(file) => uploadFile(index, file)} />
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -281,6 +568,8 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
                           className="w-full h-full"
                           allowFullScreen
                           loading="lazy"
+                          title="YouTube video preview"
+                          sandbox="allow-scripts allow-same-origin allow-presentation"
                         />
                       </div>
                     )}

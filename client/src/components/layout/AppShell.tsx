@@ -1,13 +1,13 @@
 import { ReactNode, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { BookOpen, GraduationCap, LayoutGrid, Map, BarChart3, ChevronDown, Plus } from 'lucide-react';
+import { BookOpen, GraduationCap, LayoutGrid, Home, BarChart3, ChevronDown, Plus } from 'lucide-react';
 import { useStore } from '../../stores/useStore';
 import { TopicDropdown } from './TopicDropdown';
 
 const navItems = [
   { to: '/study', label: 'Study', icon: GraduationCap },
   { to: '/cards', label: 'Cards', icon: LayoutGrid },
-  { to: '/mindmap', label: 'Mind Map', icon: Map },
+  { to: '/palace', label: 'Palace', icon: Home },
   { to: '/stats', label: 'Stats', icon: BarChart3 },
 ];
 

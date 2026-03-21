@@ -237,6 +237,81 @@ router.get('/history', (req, res) => {
   }
 });
 
+// GET /api/study/timeline — Spaced repetition timeline (upcoming due cards per day)
+router.get('/timeline', (req, res) => {
+  try {
+    const { topic, days: daysParam } = req.query;
+    const days = Math.min(Math.max(Number(daysParam) || 14, 1), 60);
+
+    let topicJoin = '';
+    const params: any[] = [];
+    if (topic) {
+      topicJoin = ' JOIN card_sets cs ON cs.id = c.card_set_id';
+    }
+    let topicWhere = '';
+    if (topic) {
+      topicWhere = ' AND cs.topic_id = ?';
+      params.push(topic);
+    }
+
+    const result: { day: string; due: number; overdue: number; label: string }[] = [];
+
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    for (let i = 0; i < days; i++) {
+      // Build date strings for the day range
+      const offsetStr = i === 0 ? '' : `'+${i} days'`;
+      const dayStart = i === 0 ? "date('now')" : `date('now', '+${i} days')`;
+      const dayEnd = i === 0 ? "date('now', '+1 day')" : `date('now', '+${i + 1} days')`;
+
+      let due = 0;
+      let overdue = 0;
+
+      if (i === 0) {
+        // Today: due = cards with sr_next_due_at <= now, overdue = cards due more than 1 day ago
+        const dueRow = queryOne(
+          `SELECT COUNT(*) as count FROM cards c${topicJoin}
+           WHERE c.sr_is_active = 1${topicWhere}
+             AND (c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime('now'))`,
+          topic ? [topic] : []
+        );
+        const overdueRow = queryOne(
+          `SELECT COUNT(*) as count FROM cards c${topicJoin}
+           WHERE c.sr_is_active = 1${topicWhere}
+             AND c.sr_next_due_at <= datetime('now', '-1 day')`,
+          topic ? [topic] : []
+        );
+        due = dueRow?.count || 0;
+        overdue = overdueRow?.count || 0;
+      } else {
+        // Future day: count cards where sr_next_due_at falls within that day
+        const row = queryOne(
+          `SELECT COUNT(*) as count FROM cards c${topicJoin}
+           WHERE c.sr_is_active = 1${topicWhere}
+             AND c.sr_next_due_at >= ${dayStart}
+             AND c.sr_next_due_at < ${dayEnd}`,
+          topic ? [topic] : []
+        );
+        due = row?.count || 0;
+        overdue = 0;
+      }
+
+      // Compute the actual date for labels
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      const isoDay = d.toISOString().slice(0, 10);
+      const label = i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : dayNames[d.getDay()];
+
+      result.push({ day: isoDay, due, overdue, label });
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error('Error fetching timeline:', err);
+    res.status(500).json({ error: 'Failed to fetch timeline' });
+  }
+});
+
 // POST /api/study/review — Submit a review
 router.post('/review', (req, res) => {
   try {

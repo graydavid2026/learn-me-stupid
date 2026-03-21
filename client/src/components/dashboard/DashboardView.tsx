@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BarChart3, TrendingUp, Calendar, Flame, BookOpen, Target, Clock, Award } from 'lucide-react';
+import { BarChart3, TrendingUp, Calendar, Flame, BookOpen, Target, Clock, Award, CalendarClock } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, Cell } from 'recharts';
 import { useStore } from '../../stores/useStore';
 
@@ -82,6 +82,125 @@ function HeatmapCalendar({ history }: { history: DayHistory[] }) {
           })}
         </div>
       ))}
+    </div>
+  );
+}
+
+interface TimelineDay {
+  day: string;
+  due: number;
+  overdue: number;
+  label: string;
+}
+
+function SRTimeline({ topicId }: { topicId?: string }) {
+  const [timeline, setTimeline] = useState<TimelineDay[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      try {
+        const params = topicId ? `?topic=${topicId}&days=14` : '?days=14';
+        const res = await fetch(`/api/study/timeline${params}`);
+        setTimeline(await res.json());
+      } catch (err) {
+        console.error('Failed to load timeline:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [topicId]);
+
+  if (loading) {
+    return (
+      <div className="card p-5 mb-8">
+        <div className="h-[200px] flex items-center justify-center text-gray-500 text-sm">Loading timeline...</div>
+      </div>
+    );
+  }
+
+  const maxDue = Math.max(1, ...timeline.map((d) => d.due + d.overdue));
+
+  // Prepare data: for the stacked chart, split "due" into overdue + regular
+  // overdue is a subset of due for today, so regular = due - overdue
+  const chartData = timeline.map((d) => ({
+    label: d.label,
+    day: d.day,
+    regular: Math.max(0, d.due - d.overdue),
+    overdue: d.overdue,
+    total: d.due,
+  }));
+
+  const TimelineTooltip = ({ active, payload, label: tooltipLabel }: any) => {
+    if (!active || !payload?.length) return null;
+    const data = payload[0]?.payload;
+    return (
+      <div className="bg-surface-elevated border border-border rounded-lg px-3 py-2 shadow-lg text-xs">
+        <p className="text-gray-300 font-medium mb-1">{data?.day} — {tooltipLabel}</p>
+        {data?.overdue > 0 && (
+          <p className="text-red-400">Overdue: {data.overdue}</p>
+        )}
+        <p className="text-amber-400">Due: {data?.total}</p>
+      </div>
+    );
+  };
+
+  return (
+    <div className="card p-5 mb-8">
+      <div className="flex items-center gap-2 mb-4">
+        <CalendarClock className="w-4 h-4 text-indigo-400" />
+        <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Upcoming Reviews (14 Days)</h3>
+      </div>
+      {chartData.every((d) => d.total === 0) ? (
+        <div className="h-[200px] flex items-center justify-center text-gray-500 text-sm">No cards scheduled</div>
+      ) : (
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={chartData} barSize={32}>
+            <XAxis
+              dataKey="label"
+              tick={{ fill: '#9ca3af', fontSize: 11 }}
+              axisLine={false}
+              tickLine={false}
+            />
+            <YAxis
+              tick={{ fill: '#6b7280', fontSize: 11 }}
+              axisLine={false}
+              tickLine={false}
+              allowDecimals={false}
+            />
+            <Tooltip content={<TimelineTooltip />} cursor={{ fill: 'rgba(99,102,241,0.08)' }} />
+            <Bar dataKey="overdue" stackId="stack" fill="#ef4444" radius={[0, 0, 0, 0]} name="Overdue" />
+            <Bar dataKey="regular" stackId="stack" fill="#f59e0b" radius={[4, 4, 0, 0]} name="Due">
+              {chartData.map((entry, i) => {
+                // Highlight today's bar with a brighter color
+                const isToday = entry.label === 'Today';
+                return (
+                  <Cell
+                    key={i}
+                    fill={isToday ? '#6366f1' : '#f59e0b'}
+                  />
+                );
+              })}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      )}
+      <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: '#ef4444' }} />
+          Overdue
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: '#6366f1' }} />
+          Due Today
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: '#f59e0b' }} />
+          Upcoming
+        </span>
+      </div>
     </div>
   );
 }
@@ -173,6 +292,9 @@ export function DashboardView() {
         <StatCard icon={BarChart3} label="Today's Accuracy" value={`${accuracy}%`} color={accuracy >= 80 ? '#22c55e' : accuracy >= 50 ? '#f59e0b' : '#ef4444'} />
         <StatCard icon={Calendar} label="Overdue" value={stats.overdue} color={stats.overdue > 0 ? '#ef4444' : undefined} />
       </div>
+
+      {/* SR Timeline */}
+      <SRTimeline topicId={selectedTopicId || undefined} />
 
       <div className="grid md:grid-cols-2 gap-6 mb-8">
         {/* Tier Distribution */}
