@@ -32,6 +32,15 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Serve static client in production
+if (process.env.NODE_ENV === 'production') {
+  const clientDir = path.join(__dirname, '..', 'dist', 'client');
+  app.use(express.static(clientDir));
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(clientDir, 'index.html'));
+  });
+}
+
 async function start() {
   await initDb();
   // Run migrations on startup
