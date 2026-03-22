@@ -22,11 +22,13 @@ export function TopicDropdown() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleCreate = async () => {
+  const handleCreate = () => {
     if (newName.trim()) {
-      await createTopic({ name: newName.trim() });
+      const name = newName.trim();
       setNewName('');
       setCreating(false);
+      setOpen(false);
+      createTopic({ name }); // fire and forget — topics list updates via fetchTopics
     }
   };
 
