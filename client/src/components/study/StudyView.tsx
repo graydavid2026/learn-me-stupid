@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { GraduationCap, RotateCcw, Check, X, ChevronRight, Play, Filter, Zap, Clock, Target } from 'lucide-react';
+import { GraduationCap, RotateCcw, Check, X, ChevronRight, Play, Filter, Zap, Clock, Target, ArrowLeft } from 'lucide-react';
 import { useStore, CardFull, MediaBlock } from '../../stores/useStore';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 
 const SLOT_COLORS: Record<number, string> = {
   0: '#6b7280', 1: '#ef4444', 2: '#f97316', 3: '#f59e0b',
@@ -80,9 +81,12 @@ interface SessionStats {
 export function StudyView() {
   const { selectedTopicId, topics, cardSets, fetchTopics } = useStore();
   const selectedTopic = topics.find((t) => t.id === selectedTopicId);
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const urlSetId = searchParams.get('set');
 
   // Session state
-  const [mode, setMode] = useState<StudyMode>('due');
+  const [mode, setMode] = useState<StudyMode>(urlSetId ? 'focus' : 'due');
   const [queue, setQueue] = useState<CardFull[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
@@ -90,8 +94,17 @@ export function StudyView() {
   const [sessionActive, setSessionActive] = useState(false);
   const [sessionComplete, setSessionComplete] = useState(false);
   const [stats, setStats] = useState<SessionStats>({ total: 0, reviewed: 0, correct: 0, wrong: 0, slotChanges: [] });
-  const [filterSetId, setFilterSetId] = useState<string>('');
+  const [filterSetId, setFilterSetId] = useState<string>(urlSetId || '');
   const startTime = useRef<number>(0);
+  const autoStarted = useRef(false);
+
+  // Auto-start when navigated from dashboard with ?set=xxx
+  useEffect(() => {
+    if (urlSetId && !autoStarted.current && !sessionActive) {
+      autoStarted.current = true;
+      startSession();
+    }
+  }, [urlSetId]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -264,9 +277,13 @@ export function StudyView() {
             </div>
           )}
 
-          <div className="flex gap-3 justify-center">
+          <div className="flex gap-3 justify-center flex-wrap">
+            <button onClick={() => navigate('/stats')} className="btn-secondary flex items-center gap-2">
+              <ArrowLeft className="w-4 h-4" />
+              Dashboard
+            </button>
             <button onClick={() => { setSessionActive(false); setSessionComplete(false); }} className="btn-secondary">
-              Back to Menu
+              Study Menu
             </button>
             <button onClick={startSession} className="btn-primary flex items-center gap-2">
               <RotateCcw className="w-4 h-4" />

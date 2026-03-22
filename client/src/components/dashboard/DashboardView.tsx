@@ -26,10 +26,20 @@ interface TopicForecast {
   total_cards: number;
   due_now: number;
   mastered: number;
-  new_cards: number;
-  avg_slot: number;
+  new_cards?: number;
+  avg_slot?: number;
   overdue: number;
+  next_due?: string | null;
+  tranches?: { tranche: number; count: number }[];
 }
+
+const TRANCHE_NAMES: Record<number, string> = {
+  1: 'Immediate', 2: 'Short-Term', 3: 'Medium-Term', 4: 'Long-Term', 5: 'Mastery',
+};
+
+const TRANCHE_COLORS: Record<number, string> = {
+  1: '#ef4444', 2: '#f59e0b', 3: '#22c55e', 4: '#3b82f6', 5: '#a855f7',
+};
 
 interface WeekDay {
   day: string;
@@ -92,7 +102,6 @@ function StatCard({ icon: Icon, label, value, color, tooltip, onClick, urgent }:
 
 function TopicCard({ topic, onClick }: { topic: TopicForecast; onClick: () => void }) {
   const masteryPct = topic.total_cards > 0 ? Math.round((topic.mastered / topic.total_cards) * 100) : 0;
-  const avgSlot = Math.round((topic.avg_slot || 0) * 10) / 10;
 
   return (
     <button
@@ -107,30 +116,49 @@ function TopicCard({ topic, onClick }: { topic: TopicForecast; onClick: () => vo
         <ChevronRight className="w-4 h-4 text-gray-600 shrink-0" />
       </div>
 
+      {/* Due count with tranche breakdown */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          {topic.due_now > 0 ? (
+            <span className={`text-sm font-mono font-bold ${topic.overdue > 0 ? 'text-red-400' : 'text-amber-400'}`}>
+              {topic.due_now} due
+            </span>
+          ) : (
+            <span className="text-sm text-green-400 font-medium">All caught up</span>
+          )}
+        </div>
+        <span className="text-[11px] text-gray-500">{topic.total_cards} cards</span>
+      </div>
+
+      {/* Tranche breakdown mini-bar */}
+      {topic.tranches && topic.due_now > 0 && (
+        <div className="flex gap-1 mb-2">
+          {topic.tranches.filter(t => t.count > 0).map(t => (
+            <div
+              key={t.tranche}
+              className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded"
+              style={{ backgroundColor: `${TRANCHE_COLORS[t.tranche]}15`, color: TRANCHE_COLORS[t.tranche] }}
+            >
+              <span className="font-mono font-bold">{t.count}</span>
+              <span className="opacity-70">{TRANCHE_NAMES[t.tranche]}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Progress bar */}
-      <div className="w-full bg-surface-base rounded-full h-2 mb-2">
+      <div className="w-full bg-surface-base rounded-full h-1.5 mb-1.5">
         <div
-          className="h-2 rounded-full transition-all"
+          className="h-1.5 rounded-full transition-all"
           style={{
             width: `${masteryPct}%`,
             backgroundColor: masteryPct >= 80 ? '#22c55e' : masteryPct >= 40 ? '#f59e0b' : '#ef4444',
           }}
         />
       </div>
-
-      <div className="flex items-center justify-between text-[11px]">
-        <div className="flex items-center gap-3">
-          {topic.due_now > 0 && (
-            <span className={`font-mono font-medium ${topic.overdue > 0 ? 'text-red-400' : 'text-amber-400'}`}>
-              {topic.due_now} due
-            </span>
-          )}
-          {topic.due_now === 0 && (
-            <span className="text-green-400 font-medium">All caught up</span>
-          )}
-          <span className="text-gray-500">{topic.total_cards} cards</span>
-        </div>
-        <span className="text-gray-500 font-mono">{masteryPct}%</span>
+      <div className="flex items-center justify-between text-[10px] text-gray-500">
+        <span>{masteryPct}% mastered</span>
+        {topic.next_due && <span>Next: {fmt.relativeTime(topic.next_due)}</span>}
       </div>
     </button>
   );
@@ -272,21 +300,34 @@ export function DashboardView() {
     async function load() {
       setLoading(true);
       try {
+        // Run cascade regression check before loading dashboard data
+        await fetch('/api/study/decay-check', { method: 'POST' });
+
         const params = selectedTopicId ? `?topic=${selectedTopicId}` : '';
 
-        const [statsRes, forecastRes, calendarRes] = await Promise.all([
+        const [statsRes, masterRes, calendarRes] = await Promise.all([
           fetch(`/api/study/stats${params}`),
-          fetch('/api/study/forecast'),
+          fetch('/api/study/master-dashboard'),
           fetch('/api/study/calendar?days=60'),
         ]);
 
         setStats(await statsRes.json());
-        setForecast(await forecastRes.json());
+        const masterData = await masterRes.json();
+        // Map master-dashboard response to forecast shape
+        setForecast({
+          topics: masterData.topics,
+          weekForecast: [], // Will load separately if needed
+        });
         setCalendar(await calendarRes.json());
 
-        // If a topic is selected, load its SR detail
+        // Load week forecast
+        const forecastRes = await fetch('/api/study/forecast');
+        const fData = await forecastRes.json();
+        setForecast(prev => prev ? { ...prev, weekForecast: fData.weekForecast } : prev);
+
+        // If a topic is selected, load its detail
         if (selectedTopicId) {
-          const srRes = await fetch(`/api/study/topic-sr/${selectedTopicId}`);
+          const srRes = await fetch(`/api/study/topic-dashboard/${selectedTopicId}`);
           setTopicSR(await srRes.json());
         } else {
           setTopicSR(null);
@@ -356,9 +397,9 @@ export function DashboardView() {
           <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
           <div className="flex-1 text-left">
             <p className="text-sm font-medium text-red-400">
-              {totalOverdue} card{totalOverdue !== 1 ? 's' : ''} overdue — at risk of tier decay
+              {totalOverdue} card{totalOverdue !== 1 ? 's' : ''} overdue — past grace period
             </p>
-            <p className="text-xs text-gray-500 mt-0.5">Review now to prevent losing progress</p>
+            <p className="text-xs text-gray-500 mt-0.5">Review now to prevent slot regression</p>
           </div>
           <ChevronRight className="w-4 h-4 text-red-400 shrink-0" />
         </button>
@@ -429,31 +470,83 @@ export function DashboardView() {
             </button>
           )}
 
-          {/* Sets breakdown */}
+          {/* Topic summary */}
+          {topicSR.summary && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+              <div className="card p-3">
+                <p className="text-xs text-gray-500 uppercase">Total</p>
+                <p className="text-lg font-bold font-mono text-white">{topicSR.summary.total || 0}</p>
+              </div>
+              <div className="card p-3">
+                <p className="text-xs text-gray-500 uppercase">Due</p>
+                <p className="text-lg font-bold font-mono text-amber-400">{topicSR.summary.due || 0}</p>
+              </div>
+              <div className="card p-3">
+                <p className="text-xs text-gray-500 uppercase">Overdue</p>
+                <p className="text-lg font-bold font-mono text-red-400">{topicSR.summary.overdue || 0}</p>
+              </div>
+              <div className="card p-3">
+                <p className="text-xs text-gray-500 uppercase">Mastered</p>
+                <p className="text-lg font-bold font-mono text-purple-400">{topicSR.summary.mastered || 0}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Sets breakdown with tranche drill-down */}
           <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Card Sets</h3>
           <div className="space-y-2 mb-6">
             {topicSR.sets?.map((set: any) => {
               const masteryPct = set.total > 0 ? Math.round((set.mastered / set.total) * 100) : 0;
               return (
-                <div key={set.id} className="card p-3 flex items-center gap-3">
-                  <div className="flex-1 min-w-0">
+                <button
+                  key={set.id}
+                  onClick={() => {
+                    selectTopic(selectedTopicId!);
+                    navigate(`/study?set=${set.id}`);
+                  }}
+                  className="card p-3 w-full text-left hover:border-accent/40 active:scale-[0.99] transition-all cursor-pointer"
+                >
+                  <div className="flex items-center justify-between mb-1">
                     <p className="text-sm font-medium text-white truncate">{set.name}</p>
-                    <div className="flex items-center gap-3 mt-1 text-[11px]">
-                      <span className="text-gray-500">{set.total} cards</span>
-                      {set.due > 0 && <span className="text-amber-400 font-mono">{set.due} due</span>}
-                      <span className="text-gray-500">{masteryPct}% mastered</span>
+                    <div className="flex items-center gap-2">
+                      {set.due > 0 && (
+                        <span className={`text-xs font-mono font-bold ${set.overdue > 0 ? 'text-red-400' : 'text-amber-400'}`}>
+                          {set.due} due
+                        </span>
+                      )}
+                      <ChevronRight className="w-3.5 h-3.5 text-gray-600" />
                     </div>
                   </div>
-                  <div className="w-16 bg-surface-base rounded-full h-1.5">
-                    <div
-                      className="h-1.5 rounded-full"
-                      style={{
-                        width: `${masteryPct}%`,
-                        backgroundColor: masteryPct >= 80 ? '#22c55e' : masteryPct >= 40 ? '#f59e0b' : '#ef4444',
-                      }}
-                    />
+                  {/* Tranche breakdown for this set */}
+                  {set.tranches && set.due > 0 && (
+                    <div className="flex gap-1 mb-1.5">
+                      {set.tranches.filter((t: any) => t.count > 0).map((t: any) => (
+                        <div
+                          key={t.tranche}
+                          className="flex items-center gap-0.5 text-[9px] px-1 py-0.5 rounded"
+                          style={{ backgroundColor: `${TRANCHE_COLORS[t.tranche]}15`, color: TRANCHE_COLORS[t.tranche] }}
+                        >
+                          <span className="font-mono font-bold">{t.count}</span>
+                          <span className="opacity-70">{TRANCHE_NAMES[t.tranche]}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-3 text-[11px]">
+                    <span className="text-gray-500">{set.total} cards</span>
+                    <span className="text-gray-500">{masteryPct}% mastered</span>
+                    <div className="flex-1" />
+                    <div className="w-16 bg-surface-base rounded-full h-1.5">
+                      <div
+                        className="h-1.5 rounded-full"
+                        style={{
+                          width: `${masteryPct}%`,
+                          backgroundColor: masteryPct >= 80 ? '#22c55e' : masteryPct >= 40 ? '#f59e0b' : '#ef4444',
+                        }}
+                      />
+                    </div>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>

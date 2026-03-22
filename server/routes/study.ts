@@ -591,4 +591,142 @@ router.get('/topic-sr/:topicId', (req, res) => {
   }
 });
 
+// GET /api/study/master-dashboard — Per-topic, per-tranche due counts for master dashboard
+router.get('/master-dashboard', (_req, res) => {
+  try {
+    // Get all topics with their card counts
+    const topics = queryAll(
+      `SELECT t.id, t.name, t.color,
+              COUNT(c.id) as total_cards,
+              SUM(CASE WHEN c.sr_is_active = 1 AND (c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime('now')) THEN 1 ELSE 0 END) as due_now,
+              SUM(CASE WHEN c.sr_is_active = 1 AND c.sr_grace_deadline IS NOT NULL AND c.sr_grace_deadline <= datetime('now') THEN 1 ELSE 0 END) as overdue,
+              SUM(CASE WHEN c.sr_slot >= 12 THEN 1 ELSE 0 END) as mastered,
+              MIN(CASE WHEN c.sr_next_due_at > datetime('now') THEN c.sr_next_due_at ELSE NULL END) as next_due
+       FROM topics t
+       LEFT JOIN card_sets cs ON cs.topic_id = t.id
+       LEFT JOIN cards c ON c.card_set_id = cs.id
+       GROUP BY t.id
+       ORDER BY due_now DESC`,
+      []
+    );
+
+    // Per-topic, per-tranche breakdown for due cards
+    // Tranche 1: slots 1-3, Tranche 2: slots 4-6, Tranche 3: slots 7-9, Tranche 4: slots 10-11, Tranche 5: slots 12-13
+    const trancheBreakdown = queryAll(
+      `SELECT cs.topic_id,
+              CASE
+                WHEN c.sr_slot <= 3 THEN 1
+                WHEN c.sr_slot <= 6 THEN 2
+                WHEN c.sr_slot <= 9 THEN 3
+                WHEN c.sr_slot <= 11 THEN 4
+                ELSE 5
+              END as tranche,
+              COUNT(*) as count
+       FROM cards c
+       JOIN card_sets cs ON cs.id = c.card_set_id
+       WHERE c.sr_is_active = 1
+         AND (c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime('now'))
+       GROUP BY cs.topic_id, tranche`,
+      []
+    );
+
+    // Attach tranche data to topics
+    const topicsWithTranches = topics.map((t: any) => ({
+      ...t,
+      tranches: [1, 2, 3, 4, 5].map(tr => ({
+        tranche: tr,
+        count: trancheBreakdown.find((b: any) => b.topic_id === t.id && b.tranche === tr)?.count || 0,
+      })),
+    }));
+
+    // Global totals
+    const totalDue = topics.reduce((sum: number, t: any) => sum + (t.due_now || 0), 0);
+    const totalOverdue = topics.reduce((sum: number, t: any) => sum + (t.overdue || 0), 0);
+    const totalCards = topics.reduce((sum: number, t: any) => sum + (t.total_cards || 0), 0);
+
+    res.json({ topics: topicsWithTranches, totalDue, totalOverdue, totalCards });
+  } catch (err) {
+    console.error('Error fetching master dashboard:', err);
+    res.status(500).json({ error: 'Failed to fetch master dashboard' });
+  }
+});
+
+// GET /api/study/topic-dashboard/:topicId — Per-card-set, per-tranche breakdown for topic drill-down
+router.get('/topic-dashboard/:topicId', (req, res) => {
+  try {
+    const { topicId } = req.params;
+
+    const topic = queryOne('SELECT * FROM topics WHERE id = ?', [topicId]);
+    if (!topic) return res.status(404).json({ error: 'Topic not found' });
+
+    // Per-card-set summary
+    const sets = queryAll(
+      `SELECT cs.id, cs.name,
+              COUNT(c.id) as total,
+              SUM(CASE WHEN c.sr_is_active = 1 AND (c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime('now')) THEN 1 ELSE 0 END) as due,
+              SUM(CASE WHEN c.sr_is_active = 1 AND c.sr_grace_deadline IS NOT NULL AND c.sr_grace_deadline <= datetime('now') THEN 1 ELSE 0 END) as overdue,
+              SUM(CASE WHEN c.sr_slot >= 12 THEN 1 ELSE 0 END) as mastered
+       FROM card_sets cs
+       LEFT JOIN cards c ON c.card_set_id = cs.id
+       WHERE cs.topic_id = ?
+       GROUP BY cs.id`,
+      [topicId]
+    );
+
+    // Per-card-set, per-tranche breakdown for due cards
+    const setTranches = queryAll(
+      `SELECT c.card_set_id,
+              CASE
+                WHEN c.sr_slot <= 3 THEN 1
+                WHEN c.sr_slot <= 6 THEN 2
+                WHEN c.sr_slot <= 9 THEN 3
+                WHEN c.sr_slot <= 11 THEN 4
+                ELSE 5
+              END as tranche,
+              COUNT(*) as count
+       FROM cards c
+       JOIN card_sets cs ON cs.id = c.card_set_id
+       WHERE cs.topic_id = ?
+         AND c.sr_is_active = 1
+         AND (c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime('now'))
+       GROUP BY c.card_set_id, tranche`,
+      [topicId]
+    );
+
+    // Topic-level summary
+    const summary = queryOne(
+      `SELECT COUNT(c.id) as total,
+              SUM(CASE WHEN c.sr_is_active = 1 AND (c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime('now')) THEN 1 ELSE 0 END) as due,
+              SUM(CASE WHEN c.sr_is_active = 1 AND c.sr_grace_deadline IS NOT NULL AND c.sr_grace_deadline <= datetime('now') THEN 1 ELSE 0 END) as overdue,
+              SUM(CASE WHEN c.sr_slot >= 12 THEN 1 ELSE 0 END) as mastered
+       FROM cards c
+       JOIN card_sets cs ON cs.id = c.card_set_id
+       WHERE cs.topic_id = ?`,
+      [topicId]
+    );
+
+    // Slot distribution
+    const slotDist = queryAll(
+      `SELECT c.sr_slot as slot, COUNT(*) as count
+       FROM cards c JOIN card_sets cs ON cs.id = c.card_set_id
+       WHERE cs.topic_id = ? AND c.sr_is_active = 1
+       GROUP BY c.sr_slot ORDER BY c.sr_slot`,
+      [topicId]
+    );
+
+    const setsWithTranches = sets.map((s: any) => ({
+      ...s,
+      tranches: [1, 2, 3, 4, 5].map(tr => ({
+        tranche: tr,
+        count: setTranches.find((b: any) => b.card_set_id === s.id && b.tranche === tr)?.count || 0,
+      })),
+    }));
+
+    res.json({ topic, sets: setsWithTranches, summary, slotDistribution: slotDist });
+  } catch (err) {
+    console.error('Error fetching topic dashboard:', err);
+    res.status(500).json({ error: 'Failed to fetch topic dashboard' });
+  }
+});
+
 export default router;
