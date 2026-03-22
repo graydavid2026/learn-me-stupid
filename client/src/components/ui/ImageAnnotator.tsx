@@ -75,11 +75,17 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
 
   // Load image
   useEffect(() => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
+    const img = new window.Image();
+    // Only set crossOrigin for server URLs, not blob URLs
+    if (!imageSrc.startsWith('blob:')) {
+      img.crossOrigin = 'anonymous';
+    }
     img.onload = () => {
       imgRef.current = img;
       fitImage();
+    };
+    img.onerror = (e) => {
+      console.error('ImageAnnotator: failed to load image', imageSrc, e);
     };
     img.src = imageSrc;
   }, [imageSrc]);
