@@ -3,6 +3,13 @@ export default {
   content: ['./client/src/**/*.{js,ts,jsx,tsx}', './client/index.html'],
   darkMode: 'class',
   theme: {
+    screens: {
+      xs: '420px',
+      sm: '640px',
+      md: '768px',
+      lg: '1024px',
+      xl: '1280px',
+    },
     extend: {
       colors: {
         surface: {

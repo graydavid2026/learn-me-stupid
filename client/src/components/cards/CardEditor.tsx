@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Plus, GripVertical, Trash2, Type, Image, Music, Video, Youtube, Upload, ChevronDown, Clipboard, Mic, Square, VideoIcon } from 'lucide-react';
+import { X, Plus, GripVertical, Trash2, Type, Image, Music, Video, Youtube, Upload, ChevronDown, Clipboard, Mic, Square, VideoIcon, Camera, Pencil } from 'lucide-react';
 import { useStore, MediaBlock, CardFull } from '../../stores/useStore';
+import { ImageAnnotator } from '../ui/ImageAnnotator';
 
 type BlockType = 'text' | 'image' | 'audio' | 'video' | 'youtube';
 
@@ -152,7 +153,7 @@ function useVideoRecorder(onRecorded: (file: File) => void) {
 
   const start = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: true });
       streamRef.current = stream;
       setPreviewing(true);
 
@@ -336,6 +337,7 @@ interface SideEditorProps {
 
 function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorProps) {
   const [showAddMenu, setShowAddMenu] = useState(false);
+  const [annotatingIndex, setAnnotatingIndex] = useState<number | null>(null);
 
   const addBlock = (type: BlockType) => {
     onBlocksChange([...blocks, newBlock(type)]);
@@ -456,13 +458,22 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
                     {block.file_path ? (
                       <div className="p-4">
                         {block.block_type === 'image' && (
-                          <img src={`/uploads/${block.file_path}`} alt="" className="max-h-40 mx-auto rounded" />
+                          <div className="relative group/img">
+                            <img src={`/uploads/${block.file_path}`} alt="" className="max-h-40 mx-auto rounded" />
+                            <button
+                              onClick={() => setAnnotatingIndex(index)}
+                              className="absolute top-2 right-2 bg-black/60 text-white p-1.5 rounded-lg opacity-0 group-hover/img:opacity-100 sm:opacity-0 active:opacity-100 transition-opacity"
+                              title="Annotate image"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          </div>
                         )}
                         {block.block_type === 'audio' && (
                           <audio controls src={`/uploads/${block.file_path}`} className="w-full" />
                         )}
                         {block.block_type === 'video' && (
-                          <video controls src={`/uploads/${block.file_path}`} className="max-h-40 mx-auto rounded" />
+                          <video controls src={`/uploads/${block.file_path}`} className="max-h-40 mx-auto rounded" playsInline />
                         )}
                         <p className="text-xs text-gray-500 mt-2">{block.file_name}</p>
                       </div>
@@ -509,9 +520,27 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
                           />
                         </label>
                         {block.block_type === 'image' && (
-                          <p className="text-xs text-gray-500 mt-2 pointer-events-none">
-                            PNG, JPG, WEBP, GIF — Click area then Ctrl+V to paste screenshot
-                          </p>
+                          <>
+                            <div className="mt-3 flex items-center gap-2 justify-center pointer-events-auto">
+                              <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-accent/15 text-accent hover:bg-accent/25 rounded-md text-sm transition-colors cursor-pointer">
+                                <Camera className="w-4 h-4" />
+                                Take Photo
+                                <input
+                                  type="file"
+                                  className="hidden"
+                                  accept="image/*"
+                                  capture="environment"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) uploadFile(index, file);
+                                  }}
+                                />
+                              </label>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-2 pointer-events-none">
+                              PNG, JPG, WEBP, GIF — Paste, browse, or take a photo
+                            </p>
+                          </>
                         )}
                         {block.block_type === 'audio' && (
                           <div className="mt-3 pointer-events-auto">
@@ -608,7 +637,7 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
                   <button
                     key={type}
                     onClick={() => addBlock(type)}
-                    className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-300 hover:bg-surface hover:text-white transition-colors"
+                    className="flex items-center gap-2 w-full px-3 py-2.5 sm:py-2 text-sm text-gray-300 hover:bg-surface hover:text-white active:bg-surface transition-colors"
                   >
                     <Icon className="w-4 h-4" />
                     {blockTypeLabels[type]}
@@ -619,6 +648,20 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
           )}
         </div>
       </div>
+
+      {/* Image Annotator */}
+      {annotatingIndex !== null && blocks[annotatingIndex]?.file_path && (
+        <ImageAnnotator
+          imageSrc={`/uploads/${blocks[annotatingIndex].file_path}`}
+          onSave={async (blob) => {
+            // Upload annotated image, replace original
+            const file = new File([blob], `annotated-${Date.now()}.png`, { type: 'image/png' });
+            await uploadFile(annotatingIndex, file);
+            setAnnotatingIndex(null);
+          }}
+          onCancel={() => setAnnotatingIndex(null)}
+        />
+      )}
     </div>
   );
 }
@@ -723,10 +766,10 @@ export function CardEditor() {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-surface rounded-modal border border-border w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center sm:p-4">
+      <div className="bg-surface rounded-t-2xl sm:rounded-modal border border-border w-full sm:max-w-3xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-border shrink-0">
           <h2 className="text-lg font-heading font-semibold text-white">
             {editingCard ? 'Edit Card' : 'New Card'}
           </h2>
@@ -739,7 +782,7 @@ export function CardEditor() {
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-6">
           <SideEditor
             label="Front Side"
             blocks={frontBlocks}
@@ -804,7 +847,7 @@ export function CardEditor() {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border shrink-0">
+        <div className="flex items-center justify-end gap-3 px-4 sm:px-6 py-3 sm:py-4 border-t border-border shrink-0 safe-bottom">
           <button onClick={() => setShowCardEditor(false)} className="btn-secondary">
             Cancel
           </button>

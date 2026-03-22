@@ -281,24 +281,24 @@ export function StudyView() {
     return (
       <div className="max-w-2xl mx-auto">
         {/* Progress bar */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-400">
+        <div className="flex items-center justify-between mb-3 sm:mb-4">
+          <div className="flex items-center gap-2">
+            <span className="text-xs sm:text-sm text-gray-400 truncate max-w-[120px] sm:max-w-none">
               {selectedTopic?.name || 'All Topics'}
             </span>
             <span className="text-xs text-gray-600">|</span>
-            <span className="text-sm font-mono text-gray-400">
+            <span className="text-xs sm:text-sm font-mono text-gray-400">
               {currentIndex + 1}/{queue.length}
             </span>
           </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-green-400 font-mono">{stats.correct} ✓</span>
-            <span className="text-sm text-red-400 font-mono">{stats.wrong} ✗</span>
+          <div className="flex items-center gap-2 sm:gap-4">
+            <span className="text-xs sm:text-sm text-green-400 font-mono">{stats.correct} ✓</span>
+            <span className="text-xs sm:text-sm text-red-400 font-mono">{stats.wrong} ✗</span>
             <button
               onClick={() => { setSessionActive(false); setSessionComplete(false); }}
-              className="text-xs text-gray-500 hover:text-gray-300"
+              className="text-xs text-gray-500 hover:text-gray-300 active:text-gray-200"
             >
-              End Session
+              End
             </button>
           </div>
         </div>
@@ -312,7 +312,7 @@ export function StudyView() {
         </div>
 
         {/* Card */}
-        <div className="card p-8 min-h-[300px] flex flex-col">
+        <div className="card p-4 sm:p-8 min-h-[250px] sm:min-h-[300px] flex flex-col">
           {/* Card meta */}
           <div className="flex items-center justify-between mb-6">
             <TierDots tier={currentCard.sr_tier} />
@@ -365,37 +365,38 @@ export function StudyView() {
             {!flipped ? (
               <button
                 onClick={() => setFlipped(true)}
-                className="btn-primary w-full flex items-center justify-center gap-2"
+                className="btn-primary w-full py-3 sm:py-2 text-base sm:text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
               >
                 Show Answer
-                <span className="text-xs opacity-60">[Space]</span>
+                <span className="text-xs opacity-60 hidden sm:inline">[Space]</span>
               </button>
             ) : (
               <div className="flex gap-3">
                 <button
                   onClick={() => handleGrade('wrong')}
-                  className="flex-1 bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-600/30 px-4 py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 bg-red-600/20 hover:bg-red-600/30 active:bg-red-600/40 text-red-400 border border-red-600/30 px-4 py-4 sm:py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 active:scale-[0.98]"
                 >
                   <X className="w-5 h-5" />
                   Wrong
-                  <span className="text-xs opacity-60">[1]</span>
                 </button>
                 <button
                   onClick={() => handleGrade('correct')}
-                  className="flex-1 bg-green-600/20 hover:bg-green-600/30 text-green-400 border border-green-600/30 px-4 py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 bg-green-600/20 hover:bg-green-600/30 active:bg-green-600/40 text-green-400 border border-green-600/30 px-4 py-4 sm:py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 active:scale-[0.98]"
                 >
                   <Check className="w-5 h-5" />
                   Correct
-                  <span className="text-xs opacity-60">[2]</span>
                 </button>
               </div>
             )}
           </div>
         </div>
 
-        {/* Keyboard hint */}
-        <p className="text-center text-xs text-gray-600 mt-4">
+        {/* Keyboard hint — desktop only */}
+        <p className="text-center text-xs text-gray-600 mt-4 hidden sm:block">
           Space = flip • 1 = wrong • 2 = correct
+        </p>
+        <p className="text-center text-xs text-gray-600 mt-3 sm:hidden">
+          Tap to flip • Grade your answer
         </p>
       </div>
     );

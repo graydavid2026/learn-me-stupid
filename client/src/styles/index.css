@@ -8,9 +8,18 @@
   }
   body {
     @apply bg-surface-base text-gray-100 font-body;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
   }
   h1, h2, h3, h4, h5, h6 {
     @apply font-heading;
+  }
+  /* Safe areas for notched phones */
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
   }
 }
 
