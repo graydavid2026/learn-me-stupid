@@ -98,7 +98,7 @@ interface AppState {
 
   // Card actions
   fetchCards: (setId: string) => Promise<void>;
-  createCard: (setId: string, data: { tags?: string[]; front: { media_blocks: Partial<MediaBlock>[] }; back: { media_blocks: Partial<MediaBlock>[] } }) => Promise<void>;
+  createCard: (setId: string, data: { tags?: string[]; front: { media_blocks: Partial<MediaBlock>[] }; back: { media_blocks: Partial<MediaBlock>[] } }) => Promise<CardFull | null>;
   updateCard: (id: string, data: { tags?: string[]; front?: { media_blocks: Partial<MediaBlock>[] }; back?: { media_blocks: Partial<MediaBlock>[] } }) => Promise<void>;
   deleteCard: (id: string) => Promise<void>;
   setEditingCard: (card: CardFull | null) => void;
@@ -250,14 +250,18 @@ export const useStore = create<AppState>((set, get) => ({
         body: JSON.stringify(data),
       });
       if (res.ok) {
+        const created = await res.json();
         await get().fetchCards(setId);
         // Also refresh card sets to update counts
         const topicId = get().selectedTopicId;
         if (topicId) get().fetchCardSets(topicId);
         get().fetchTopics();
+        return created as CardFull;
       }
+      return null;
     } catch (err) {
       console.error('Failed to create card:', err);
+      return null;
     }
   },
 

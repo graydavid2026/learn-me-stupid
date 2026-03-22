@@ -355,12 +355,14 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
 
   const uploadFile = async (index: number, file: File) => {
     if (!cardSideId) {
-      // New card — store file reference, will upload after card creation
+      // New card — store file reference + blob URL for preview, will upload after card creation
+      const blobUrl = URL.createObjectURL(file);
       updateBlock(index, {
         file_name: file.name,
         file_size: file.size,
         mime_type: file.type,
         pendingFile: file,
+        file_path: `blob:${blobUrl}`,
       });
       return;
     }
@@ -379,6 +381,7 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
           file_name: mediaBlock.file_name,
           file_size: mediaBlock.file_size,
           mime_type: mediaBlock.mime_type,
+          pendingFile: undefined,
         });
       }
     } catch (err) {
@@ -459,7 +462,7 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
                       <div className="p-4">
                         {block.block_type === 'image' && (
                           <div className="relative group/img">
-                            <img src={`/uploads/${block.file_path}`} alt="" className="max-h-40 mx-auto rounded" />
+                            <img src={block.file_path.startsWith('blob:') ? block.file_path.slice(5) : `/uploads/${block.file_path}`} alt="" className="max-h-40 mx-auto rounded" />
                             <button
                               onClick={() => setAnnotatingIndex(index)}
                               className="absolute top-2 right-2 bg-black/60 text-white p-1.5 rounded-lg opacity-0 group-hover/img:opacity-100 sm:opacity-0 active:opacity-100 transition-opacity"
@@ -470,17 +473,12 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
                           </div>
                         )}
                         {block.block_type === 'audio' && (
-                          <audio controls src={`/uploads/${block.file_path}`} className="w-full" />
+                          <audio controls src={block.file_path.startsWith('blob:') ? block.file_path.slice(5) : `/uploads/${block.file_path}`} className="w-full" />
                         )}
                         {block.block_type === 'video' && (
-                          <video controls src={`/uploads/${block.file_path}`} className="max-h-40 mx-auto rounded" playsInline />
+                          <video controls src={block.file_path.startsWith('blob:') ? block.file_path.slice(5) : `/uploads/${block.file_path}`} className="max-h-40 mx-auto rounded" playsInline />
                         )}
-                        <p className="text-xs text-gray-500 mt-2">{block.file_name}</p>
-                      </div>
-                    ) : block.file_name ? (
-                      <div className="text-sm text-gray-400 p-4">
-                        <p>{block.file_name}</p>
-                        <p className="text-xs text-gray-500">Ready to upload on save</p>
+                        <p className="text-xs text-gray-500 mt-2">{block.file_name}{block.pendingFile ? ' — will upload on save' : ''}</p>
                       </div>
                     ) : (
                       <div className="p-4">
@@ -510,7 +508,7 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
                             className="hidden"
                             accept={
                               block.block_type === 'image' ? 'image/png,image/jpeg,image/webp,image/gif' :
-                              block.block_type === 'audio' ? 'audio/mpeg,audio/wav,audio/ogg,audio/mp4' :
+                              block.block_type === 'audio' ? 'audio/mpeg,audio/wav,audio/ogg,audio/mp4,audio/webm' :
                               'video/mp4,video/webm,video/quicktime'
                             }
                             onChange={(e) => {
@@ -652,7 +650,7 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
       {/* Image Annotator */}
       {annotatingIndex !== null && blocks[annotatingIndex]?.file_path && (
         <ImageAnnotator
-          imageSrc={`/uploads/${blocks[annotatingIndex].file_path}`}
+          imageSrc={blocks[annotatingIndex].file_path.startsWith('blob:') ? blocks[annotatingIndex].file_path.slice(5) : `/uploads/${blocks[annotatingIndex].file_path}`}
           onSave={async (blob) => {
             // Upload annotated image, replace original
             const file = new File([blob], `annotated-${Date.now()}.png`, { type: 'image/png' });
@@ -719,11 +717,12 @@ export function CardEditor() {
     if (!selectedSetId) return;
     setSaving(true);
 
+    // Strip blob: prefixes from file_path for pending files (server doesn't need them)
     const toMediaBlocks = (blocks: EditableBlock[]) =>
       blocks.map((b) => ({
         block_type: b.block_type,
         text_content: b.text_content || null,
-        file_path: b.file_path,
+        file_path: b.file_path && !b.file_path.startsWith('blob:') ? b.file_path : null,
         file_name: b.file_name,
         file_size: b.file_size,
         mime_type: b.mime_type,
@@ -731,20 +730,69 @@ export function CardEditor() {
         youtube_embed_id: b.youtube_embed_id,
       }));
 
+    // Upload all pending files for a given side, then update the card
+    const uploadPendingFiles = async (blocks: EditableBlock[], sideId: string) => {
+      for (const block of blocks) {
+        if (block.pendingFile) {
+          const formData = new FormData();
+          formData.append('file', block.pendingFile);
+          formData.append('cardSideId', sideId);
+          try {
+            const res = await fetch('/api/media/upload', { method: 'POST', body: formData });
+            if (res.ok) {
+              const mediaBlock = await res.json();
+              block.file_path = mediaBlock.file_path;
+              block.file_name = mediaBlock.file_name;
+              block.file_size = mediaBlock.file_size;
+              block.mime_type = mediaBlock.mime_type;
+              block.pendingFile = undefined;
+            }
+          } catch (err) {
+            console.error('Upload failed:', err);
+          }
+        }
+      }
+    };
+
     try {
       if (editingCard) {
+        // For existing cards, upload any pending files first
+        if (editingCard.front?.id) await uploadPendingFiles(frontBlocks, editingCard.front.id);
+        if (editingCard.back?.id) await uploadPendingFiles(backBlocks, editingCard.back.id);
         await updateCard(editingCard.id, {
           tags,
           front: { media_blocks: toMediaBlocks(frontBlocks) },
           back: { media_blocks: toMediaBlocks(backBlocks) },
         });
       } else {
-        await createCard(selectedSetId, {
+        // Create card first (without file paths for pending files)
+        const created = await createCard(selectedSetId, {
           tags,
           front: { media_blocks: toMediaBlocks(frontBlocks) },
           back: { media_blocks: toMediaBlocks(backBlocks) },
         });
+
+        // Upload pending files using the new side IDs
+        if (created) {
+          const hasPending = [...frontBlocks, ...backBlocks].some(b => b.pendingFile);
+          if (hasPending) {
+            if (created.front?.id) await uploadPendingFiles(frontBlocks, created.front.id);
+            if (created.back?.id) await uploadPendingFiles(backBlocks, created.back.id);
+            // Update card with actual file paths
+            await updateCard(created.id, {
+              tags,
+              front: { media_blocks: toMediaBlocks(frontBlocks) },
+              back: { media_blocks: toMediaBlocks(backBlocks) },
+            });
+          }
+        }
       }
+      // Clean up any blob URLs
+      [...frontBlocks, ...backBlocks].forEach(b => {
+        if (b.file_path?.startsWith('blob:')) {
+          URL.revokeObjectURL(b.file_path.slice(5));
+        }
+      });
       setShowCardEditor(false);
     } catch (err) {
       console.error('Save failed:', err);

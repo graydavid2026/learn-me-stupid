@@ -28,7 +28,7 @@ const upload = multer({
   fileFilter: (_req, file, cb) => {
     const allowed = [
       'image/png', 'image/jpeg', 'image/webp', 'image/gif',
-      'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4',
+      'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/webm',
       'video/mp4', 'video/webm', 'video/quicktime',
     ];
     cb(null, allowed.includes(file.mimetype));
