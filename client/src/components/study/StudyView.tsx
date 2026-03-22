@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { GraduationCap, RotateCcw, Check, X, ChevronRight, Play, Filter, Zap, Clock, Target } from 'lucide-react';
 import { useStore, CardFull, MediaBlock } from '../../stores/useStore';
 
@@ -100,7 +99,7 @@ export function StudyView() {
       if (!sessionActive || sessionComplete) return;
       if (e.key === ' ' || e.key === 'Spacebar') {
         e.preventDefault();
-        if (!flipped) setFlipped(true);
+        setFlipped((f) => !f);
       }
       if (flipped) {
         if (e.key === '1') handleGrade('wrong');
@@ -279,6 +278,43 @@ export function StudyView() {
     );
   }
 
+  // --- SR STATUS BADGE ---
+  const SrBadge = ({ card }: { card: CardFull }) => {
+    const slot = card.sr_slot;
+    const dueAt = card.sr_next_due_at;
+    const graceDeadline = card.sr_grace_deadline;
+    const now = Date.now();
+    const isDue = dueAt ? now >= new Date(dueAt).getTime() : slot === 0;
+    const isOverdue = graceDeadline ? now > new Date(graceDeadline).getTime() : false;
+    const trancheNum = slot <= 3 ? 1 : slot <= 6 ? 2 : slot <= 9 ? 3 : slot <= 11 ? 4 : 5;
+    const trancheNames: Record<number, string> = { 1: 'Immediate', 2: 'Short-Term', 3: 'Medium-Term', 4: 'Long-Term', 5: 'Mastery' };
+
+    const badgeColor = isOverdue ? 'border-red-500/40 bg-red-500/10' : isDue ? 'border-amber-500/40 bg-amber-500/10' : 'border-border bg-surface-base/50';
+    const textColor = isOverdue ? 'text-red-400' : isDue ? 'text-amber-400' : 'text-gray-500';
+
+    const fmtDate = (iso: string) => {
+      const d = new Date(iso);
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' +
+        d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    };
+
+    return (
+      <div className={`rounded-lg border px-2.5 py-1.5 text-right ${badgeColor}`}>
+        <div className={`text-[10px] font-mono leading-tight ${textColor}`}>
+          {dueAt ? `Due: ${fmtDate(dueAt)}` : 'New card'}
+        </div>
+        <div className="text-[10px] text-gray-500 leading-tight">
+          Slot {slot}/13 — {trancheNames[trancheNum]}
+        </div>
+        {graceDeadline && (
+          <div className="text-[10px] text-gray-600 leading-tight">
+            Grace: {fmtDate(graceDeadline)}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // --- ACTIVE SESSION ---
   if (sessionActive && currentCard) {
     return (
@@ -307,99 +343,106 @@ export function StudyView() {
         </div>
 
         {/* Progress track */}
-        <div className="w-full bg-surface rounded-full h-1.5 mb-6">
+        <div className="w-full bg-surface rounded-full h-1.5 mb-4">
           <div
             className="h-1.5 rounded-full bg-accent transition-all duration-300"
             style={{ width: `${((currentIndex) / queue.length) * 100}%` }}
           />
         </div>
 
-        {/* Card */}
-        <div className="card p-4 sm:p-6 flex flex-col">
-          {/* Card meta */}
-          <div className="flex items-center justify-between mb-6">
-            <SlotDots slot={currentCard.sr_slot} />
-            <div className="flex gap-1">
-              {(JSON.parse(currentCard.tags || '[]') as string[]).map((tag) => (
-                <span key={tag} className="text-xs bg-accent/10 text-accent/70 px-2 py-0.5 rounded">
-                  {tag}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {/* Card content */}
-          <div className="flex-1 flex flex-col items-center justify-center space-y-4">
-            <AnimatePresence mode="wait">
-              {!flipped ? (
-                <motion.div
-                  key="front"
-                  initial={{ rotateY: 90, opacity: 0 }}
-                  animate={{ rotateY: 0, opacity: 1 }}
-                  exit={{ rotateY: -90, opacity: 0 }}
-                  transition={{ duration: 0.3 }}
-                  className="w-full text-center space-y-4"
-                >
-                  <div className="text-xs uppercase tracking-wider text-gray-500 mb-2">Front</div>
-                  {currentCard.front.media_blocks.map((block) => (
-                    <MediaBlockRenderer key={block.id} block={block} />
-                  ))}
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="back"
-                  initial={{ rotateY: 90, opacity: 0 }}
-                  animate={{ rotateY: 0, opacity: 1 }}
-                  exit={{ rotateY: -90, opacity: 0 }}
-                  transition={{ duration: 0.3 }}
-                  className="w-full text-center space-y-4"
-                >
-                  <div className="text-xs uppercase tracking-wider text-gray-500 mb-2">Answer</div>
-                  {currentCard.back.media_blocks.map((block) => (
-                    <MediaBlockRenderer key={block.id} block={block} />
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Divider */}
-          <div className="border-t border-border mt-6 pt-4">
-            {!flipped ? (
-              <button
-                onClick={() => setFlipped(true)}
-                className="btn-primary w-full py-3 sm:py-2 text-base sm:text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
-              >
-                Show Answer
-                <span className="text-xs opacity-60 hidden sm:inline">[Space]</span>
-              </button>
-            ) : (
-              <div className="flex gap-3">
-                <button
-                  onClick={() => handleGrade('wrong')}
-                  className="flex-1 bg-red-600/20 hover:bg-red-600/30 active:bg-red-600/40 text-red-400 border border-red-600/30 px-4 py-4 sm:py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 active:scale-[0.98]"
-                >
-                  <X className="w-5 h-5" />
-                  Wrong
-                </button>
-                <button
-                  onClick={() => handleGrade('correct')}
-                  className="flex-1 bg-green-600/20 hover:bg-green-600/30 active:bg-green-600/40 text-green-400 border border-green-600/30 px-4 py-4 sm:py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 active:scale-[0.98]"
-                >
-                  <Check className="w-5 h-5" />
-                  Correct
-                </button>
+        {/* 3D Flip Card */}
+        <div
+          className="cursor-pointer select-none"
+          style={{ perspective: '1200px' }}
+          onClick={() => setFlipped(!flipped)}
+        >
+          <div
+            className="relative transition-transform duration-300 ease-in-out"
+            style={{
+              transformStyle: 'preserve-3d',
+              transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
+            }}
+          >
+            {/* FRONT FACE */}
+            <div
+              className="card p-4 sm:p-6"
+              style={{ backfaceVisibility: 'hidden' }}
+            >
+              {/* Top bar: slot dots + SR badge */}
+              <div className="flex items-start justify-between mb-4 gap-2">
+                <div className="flex flex-col gap-1.5">
+                  <SlotDots slot={currentCard.sr_slot} />
+                  <div className="flex gap-1">
+                    {(JSON.parse(currentCard.tags || '[]') as string[]).map((tag) => (
+                      <span key={tag} className="text-xs bg-accent/10 text-accent/70 px-2 py-0.5 rounded">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <SrBadge card={currentCard} />
               </div>
-            )}
+
+              {/* Front content */}
+              <div className="flex flex-col items-center justify-center space-y-4 min-h-[120px] sm:min-h-[160px]">
+                {currentCard.front.media_blocks.map((block) => (
+                  <MediaBlockRenderer key={block.id} block={block} />
+                ))}
+              </div>
+
+              <div className="text-center mt-4">
+                <span className="text-xs text-gray-600">
+                  {'{'}tap to flip{'}'}
+                </span>
+              </div>
+            </div>
+
+            {/* BACK FACE */}
+            <div
+              className="card p-4 sm:p-6 absolute inset-0"
+              style={{
+                backfaceVisibility: 'hidden',
+                transform: 'rotateY(180deg)',
+              }}
+            >
+              <div className="text-xs uppercase tracking-wider text-gray-500 mb-4 text-center">Answer</div>
+
+              {/* Back content */}
+              <div className="flex flex-col items-center justify-center space-y-4 min-h-[120px] sm:min-h-[160px]">
+                {currentCard.back.media_blocks.map((block) => (
+                  <MediaBlockRenderer key={block.id} block={block} />
+                ))}
+              </div>
+
+              {/* Correct / Wrong buttons */}
+              <div className="border-t border-border mt-6 pt-4">
+                <div className="flex gap-3">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleGrade('wrong'); }}
+                    className="flex-1 bg-red-600/20 hover:bg-red-600/30 active:bg-red-600/40 text-red-400 border border-red-600/30 px-4 py-4 sm:py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 active:scale-[0.98]"
+                  >
+                    <X className="w-5 h-5" />
+                    Wrong
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleGrade('correct'); }}
+                    className="flex-1 bg-green-600/20 hover:bg-green-600/30 active:bg-green-600/40 text-green-400 border border-green-600/30 px-4 py-4 sm:py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 active:scale-[0.98]"
+                  >
+                    <Check className="w-5 h-5" />
+                    Correct
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Keyboard hint — desktop only */}
+        {/* Keyboard hint */}
         <p className="text-center text-xs text-gray-600 mt-4 hidden sm:block">
           Space = flip • 1 = wrong • 2 = correct
         </p>
         <p className="text-center text-xs text-gray-600 mt-3 sm:hidden">
-          Tap to flip • Grade your answer
+          Tap card to flip • Grade your answer
         </p>
       </div>
     );
