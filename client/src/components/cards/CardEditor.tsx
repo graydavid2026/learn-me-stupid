@@ -461,14 +461,14 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
                     {block.file_path ? (
                       <div className="p-4">
                         {block.block_type === 'image' && (
-                          <div className="relative group/img">
+                          <div>
                             <img src={block.file_path.startsWith('blob:') ? block.file_path.slice(5) : `/uploads/${block.file_path}`} alt="" className="max-h-40 mx-auto rounded" />
                             <button
                               onClick={() => setAnnotatingIndex(index)}
-                              className="absolute top-2 right-2 bg-black/60 text-white p-1.5 rounded-lg opacity-0 group-hover/img:opacity-100 sm:opacity-0 active:opacity-100 transition-opacity"
-                              title="Annotate image"
+                              className="mt-2 mx-auto flex items-center gap-1.5 px-3 py-1.5 bg-accent/15 text-accent hover:bg-accent/25 rounded-md text-sm transition-colors"
                             >
-                              <Pencil className="w-4 h-4" />
+                              <Pencil className="w-3.5 h-3.5" />
+                              Edit Image
                             </button>
                           </div>
                         )}
