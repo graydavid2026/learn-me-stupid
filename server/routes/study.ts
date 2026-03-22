@@ -331,7 +331,8 @@ router.post('/review', (req, res) => {
       card.sr_tier,
       card.sr_consecutive_correct,
       card.sr_consecutive_wrong,
-      card.sr_last_reviewed_at
+      card.sr_last_reviewed_at,
+      card.sr_next_due_at
     );
 
     // Always log the review
@@ -423,6 +424,196 @@ router.post('/decay-check', (_req, res) => {
   } catch (err) {
     console.error('Error running decay check:', err);
     res.status(500).json({ error: 'Failed to run decay check' });
+  }
+});
+
+// GET /api/study/calendar — Per-day card counts by topic for calendar view
+router.get('/calendar', (req, res) => {
+  try {
+    const days = Math.min(Number(req.query.days) || 60, 120);
+
+    // Due cards per day per topic (next N days)
+    const upcoming: any[] = [];
+    for (let i = 0; i < days; i++) {
+      const dayStart = i === 0 ? "datetime('now')" : `datetime('now', '+${i} days', 'start of day')`;
+      const dayEnd = `datetime('now', '+${i + 1} days', 'start of day')`;
+
+      let sql: string;
+      if (i === 0) {
+        sql = `SELECT t.id as topic_id, t.name as topic_name, t.color as topic_color, COUNT(*) as count
+               FROM cards c
+               JOIN card_sets cs ON cs.id = c.card_set_id
+               JOIN topics t ON t.id = cs.topic_id
+               WHERE c.sr_is_active = 1
+                 AND (c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime('now'))
+               GROUP BY t.id`;
+      } else {
+        sql = `SELECT t.id as topic_id, t.name as topic_name, t.color as topic_color, COUNT(*) as count
+               FROM cards c
+               JOIN card_sets cs ON cs.id = c.card_set_id
+               JOIN topics t ON t.id = cs.topic_id
+               WHERE c.sr_is_active = 1
+                 AND c.sr_next_due_at >= ${dayStart}
+                 AND c.sr_next_due_at < ${dayEnd}
+               GROUP BY t.id`;
+      }
+
+      const rows = queryAll(sql, []);
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      const isoDay = d.toISOString().slice(0, 10);
+
+      for (const row of rows) {
+        upcoming.push({
+          day: isoDay,
+          dayOffset: i,
+          topicId: row.topic_id,
+          topicName: row.topic_name,
+          topicColor: row.topic_color,
+          count: row.count,
+        });
+      }
+    }
+
+    // Review history per day per topic (last 60 days)
+    const history = queryAll(
+      `SELECT date(rl.reviewed_at) as day, t.id as topic_id, t.name as topic_name, t.color as topic_color,
+              COUNT(*) as total,
+              SUM(CASE WHEN rl.result = 'correct' THEN 1 ELSE 0 END) as correct
+       FROM review_log rl
+       JOIN cards c ON c.id = rl.card_id
+       JOIN card_sets cs ON cs.id = c.card_set_id
+       JOIN topics t ON t.id = cs.topic_id
+       WHERE rl.reviewed_at >= date('now', '-60 days')
+       GROUP BY date(rl.reviewed_at), t.id
+       ORDER BY day`,
+      []
+    );
+
+    res.json({ upcoming, history });
+  } catch (err) {
+    console.error('Error fetching calendar:', err);
+    res.status(500).json({ error: 'Failed to fetch calendar data' });
+  }
+});
+
+// GET /api/study/forecast — Workload prediction across all topics
+router.get('/forecast', (_req, res) => {
+  try {
+    // Per-topic summary
+    const topicSummaries = queryAll(
+      `SELECT t.id, t.name, t.color,
+              COUNT(c.id) as total_cards,
+              SUM(CASE WHEN c.sr_is_active = 1 AND (c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime('now')) THEN 1 ELSE 0 END) as due_now,
+              SUM(CASE WHEN c.sr_tier >= 7 THEN 1 ELSE 0 END) as mastered,
+              SUM(CASE WHEN c.sr_tier = 0 THEN 1 ELSE 0 END) as new_cards,
+              AVG(c.sr_tier) as avg_tier,
+              SUM(CASE WHEN c.sr_is_active = 1 AND c.sr_next_due_at <= datetime('now', '-1 day') THEN 1 ELSE 0 END) as overdue
+       FROM topics t
+       LEFT JOIN card_sets cs ON cs.topic_id = t.id
+       LEFT JOIN cards c ON c.card_set_id = cs.id
+       GROUP BY t.id
+       ORDER BY due_now DESC`,
+      []
+    );
+
+    // Week forecast (next 7 days)
+    const weekForecast = [];
+    for (let i = 0; i < 7; i++) {
+      const dayStart = i === 0 ? "datetime('now')" : `datetime('now', '+${i} days', 'start of day')`;
+      const dayEnd = `datetime('now', '+${i + 1} days', 'start of day')`;
+
+      let count: number;
+      if (i === 0) {
+        const row = queryOne(
+          `SELECT COUNT(*) as count FROM cards WHERE sr_is_active = 1 AND (sr_next_due_at IS NULL OR sr_next_due_at <= datetime('now'))`,
+          []
+        );
+        count = row?.count || 0;
+      } else {
+        const row = queryOne(
+          `SELECT COUNT(*) as count FROM cards WHERE sr_is_active = 1 AND sr_next_due_at >= ${dayStart} AND sr_next_due_at < ${dayEnd}`,
+          []
+        );
+        count = row?.count || 0;
+      }
+
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      weekForecast.push({
+        day: d.toISOString().slice(0, 10),
+        label: i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : dayNames[d.getDay()],
+        count,
+      });
+    }
+
+    res.json({ topics: topicSummaries, weekForecast });
+  } catch (err) {
+    console.error('Error fetching forecast:', err);
+    res.status(500).json({ error: 'Failed to fetch forecast' });
+  }
+});
+
+// GET /api/study/topic-sr/:topicId — Detailed SR overview for one topic
+router.get('/topic-sr/:topicId', (req, res) => {
+  try {
+    const { topicId } = req.params;
+
+    // Tier distribution
+    const tierDist = queryAll(
+      `SELECT c.sr_tier as tier, COUNT(*) as count
+       FROM cards c JOIN card_sets cs ON cs.id = c.card_set_id
+       WHERE cs.topic_id = ? AND c.sr_is_active = 1
+       GROUP BY c.sr_tier ORDER BY c.sr_tier`,
+      [topicId]
+    );
+
+    // Per-set breakdown
+    const sets = queryAll(
+      `SELECT cs.id, cs.name,
+              COUNT(c.id) as total,
+              SUM(CASE WHEN c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime('now') THEN 1 ELSE 0 END) as due,
+              SUM(CASE WHEN c.sr_tier >= 7 THEN 1 ELSE 0 END) as mastered,
+              AVG(c.sr_tier) as avg_tier
+       FROM card_sets cs
+       LEFT JOIN cards c ON c.card_set_id = cs.id AND c.sr_is_active = 1
+       WHERE cs.topic_id = ?
+       GROUP BY cs.id`,
+      [topicId]
+    );
+
+    // Cards with their SR state (for timeline visualization)
+    const cards = queryAll(
+      `SELECT c.id, c.sr_tier, c.sr_next_due_at, c.sr_last_reviewed_at, c.sr_total_reviews, c.sr_total_correct, cs.name as set_name,
+              (SELECT mb.text_content FROM card_sides s JOIN media_blocks mb ON mb.card_side_id = s.id WHERE s.card_id = c.id AND s.side = 0 AND mb.block_type = 'text' LIMIT 1) as preview
+       FROM cards c JOIN card_sets cs ON cs.id = c.card_set_id
+       WHERE cs.topic_id = ? AND c.sr_is_active = 1
+       ORDER BY c.sr_next_due_at ASC NULLS FIRST`,
+      [topicId]
+    );
+
+    // Recent accuracy for this topic
+    const accuracy = queryAll(
+      `SELECT date(rl.reviewed_at) as day,
+              COUNT(*) as total,
+              SUM(CASE WHEN rl.result = 'correct' THEN 1 ELSE 0 END) as correct
+       FROM review_log rl
+       JOIN cards c ON c.id = rl.card_id
+       JOIN card_sets cs ON cs.id = c.card_set_id
+       WHERE cs.topic_id = ? AND rl.reviewed_at >= date('now', '-30 days')
+       GROUP BY date(rl.reviewed_at)
+       ORDER BY day`,
+      [topicId]
+    );
+
+    // Topic info
+    const topic = queryOne('SELECT * FROM topics WHERE id = ?', [topicId]);
+
+    res.json({ topic, tierDistribution: tierDist, sets, cards, accuracy });
+  } catch (err) {
+    console.error('Error fetching topic SR:', err);
+    res.status(500).json({ error: 'Failed to fetch topic SR data' });
   }
 });
 
