@@ -1,16 +1,19 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { ArrowRight, Hash, Crop, Palette, Undo2, Check, X, Move, Trash2 } from 'lucide-react';
+import { ArrowRight, Type, Square, Crop, Undo2, Check, X, Move, Trash2 } from 'lucide-react';
 
 /**
- * Image annotation editor with:
- * - Draggable/resizable arrows
- * - Numbered markers with color picker
+ * Image annotation editor:
+ * - Draggable/resizable arrows (bright colors, thick)
+ * - Text boxes (max 80 chars, 10px font, movable, colored)
+ * - Rectangles (thick border, resizable, colored)
  * - Crop tool
+ * - Colors: red, yellow, white, black
+ * - All annotations editable until save
  * - Touch-friendly (mobile-first)
- * - Exports annotated image as Blob
+ * - Exports annotated image as Blob (annotations baked into pixels)
  */
 
-type Tool = 'arrow' | 'number' | 'crop' | 'move' | null;
+type Tool = 'arrow' | 'text' | 'rect' | 'crop' | 'move' | null;
 
 interface Arrow {
   id: string;
@@ -19,10 +22,17 @@ interface Arrow {
   color: string;
 }
 
-interface NumberMarker {
+interface TextBox {
   id: string;
   x: number; y: number;
-  num: number;
+  text: string;
+  color: string;
+}
+
+interface Rect {
+  id: string;
+  x: number; y: number;
+  w: number; h: number;
   color: string;
 }
 
@@ -31,7 +41,8 @@ interface CropRect {
   w: number; h: number;
 }
 
-const COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#ffffff'];
+const COLORS = ['#ef4444', '#facc15', '#ffffff', '#000000']; // red, yellow, white, black
+const COLOR_LABELS: Record<string, string> = { '#ef4444': 'Red', '#facc15': 'Yellow', '#ffffff': 'White', '#000000': 'Black' };
 
 interface Props {
   imageSrc: string;
@@ -47,15 +58,18 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
   const [tool, setTool] = useState<Tool>(null);
   const [color, setColor] = useState('#ef4444');
   const [arrows, setArrows] = useState<Arrow[]>([]);
-  const [numbers, setNumbers] = useState<NumberMarker[]>([]);
-  const [nextNum, setNextNum] = useState(1);
+  const [textBoxes, setTextBoxes] = useState<TextBox[]>([]);
+  const [rects, setRects] = useState<Rect[]>([]);
   const [cropRect, setCropRect] = useState<CropRect | null>(null);
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  const [textInput, setTextInput] = useState('');
 
   // Drawing state
   const [drawing, setDrawing] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
-  const [dragHandle, setDragHandle] = useState<'start' | 'end' | 'body' | 'marker' | null>(null);
+  const [dragType, setDragType] = useState<'arrow-start' | 'arrow-end' | 'arrow-body' | 'text' | 'rect' | 'rect-resize' | null>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
   const [imgSize, setImgSize] = useState({ w: 0, h: 0, scale: 1, offsetX: 0, offsetY: 0 });
 
@@ -70,7 +84,6 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
     img.src = imageSrc;
   }, [imageSrc]);
 
-  // Fit image to container
   const fitImage = useCallback(() => {
     const img = imgRef.current;
     const container = containerRef.current;
@@ -93,7 +106,6 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
     return () => window.removeEventListener('resize', fitImage);
   }, [fitImage]);
 
-  // Convert page coords to image coords
   const toImageCoords = (pageX: number, pageY: number) => {
     const container = containerRef.current;
     if (!container) return { x: 0, y: 0 };
@@ -114,13 +126,12 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
     canvas.width = container.clientWidth;
     canvas.height = container.clientHeight;
     const ctx = canvas.getContext('2d')!;
-
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // Draw image
     ctx.drawImage(img, size.offsetX, size.offsetY, size.w, size.h);
 
-    // Draw crop overlay
+    // Crop overlay
     if (cropRect) {
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -137,6 +148,20 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
       ctx.setLineDash([]);
     }
 
+    // Draw rectangles
+    for (const r of rects) {
+      const rx = r.x * size.scale + size.offsetX;
+      const ry = r.y * size.scale + size.offsetY;
+      const rw = r.w * size.scale;
+      const rh = r.h * size.scale;
+      ctx.strokeStyle = r.color;
+      ctx.lineWidth = 4;
+      ctx.strokeRect(rx, ry, rw, rh);
+      // Resize handle (bottom-right corner)
+      ctx.fillStyle = r.color;
+      ctx.fillRect(rx + rw - 6, ry + rh - 6, 12, 12);
+    }
+
     // Draw arrows
     for (const arrow of arrows) {
       const x1 = arrow.x1 * size.scale + size.offsetX;
@@ -145,7 +170,7 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
       const y2 = arrow.y2 * size.scale + size.offsetY;
 
       ctx.strokeStyle = arrow.color;
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 4;
       ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(x1, y1);
@@ -154,7 +179,7 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
 
       // Arrowhead
       const angle = Math.atan2(y2 - y1, x2 - x1);
-      const headLen = 14;
+      const headLen = 18;
       ctx.fillStyle = arrow.color;
       ctx.beginPath();
       ctx.moveTo(x2, y2);
@@ -169,53 +194,72 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
       ctx.lineWidth = 2;
       for (const [hx, hy] of [[x1, y1], [x2, y2]]) {
         ctx.beginPath();
-        ctx.arc(hx, hy, 5, 0, Math.PI * 2);
+        ctx.arc(hx, hy, 6, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
       }
     }
 
-    // Draw number markers
-    for (const marker of numbers) {
-      const mx = marker.x * size.scale + size.offsetX;
-      const my = marker.y * size.scale + size.offsetY;
+    // Draw text boxes
+    for (const tb of textBoxes) {
+      const tx = tb.x * size.scale + size.offsetX;
+      const ty = tb.y * size.scale + size.offsetY;
+      const fontSize = Math.max(10, 14 * size.scale);
 
-      ctx.fillStyle = marker.color;
-      ctx.beginPath();
-      ctx.arc(mx, my, 14, 0, Math.PI * 2);
-      ctx.fill();
+      // Background
+      ctx.font = `bold ${fontSize}px system-ui`;
+      const metrics = ctx.measureText(tb.text || ' ');
+      const pad = 4;
+      const bgW = metrics.width + pad * 2;
+      const bgH = fontSize + pad * 2;
 
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 14px system-ui';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(String(marker.num), mx, my);
+      // Semi-transparent background for readability
+      const bgColor = tb.color === '#000000' || tb.color === '#ef4444' ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.7)';
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(tx - pad, ty - fontSize - pad, bgW, bgH);
+
+      ctx.fillStyle = tb.color;
+      ctx.font = `bold ${fontSize}px system-ui`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(tb.text, tx, ty);
     }
-  }, [arrows, numbers, cropRect, imgSize]);
+  }, [arrows, textBoxes, rects, cropRect, imgSize]);
 
   useEffect(() => { redraw(); }, [redraw]);
 
   // Pointer handlers
   const handlePointerDown = (e: React.PointerEvent) => {
+    if (editingTextId) return; // don't interact with canvas while editing text
     e.preventDefault();
     const { x, y } = toImageCoords(e.clientX, e.clientY);
+    const hitRadius = 20 / imgSize.scale;
 
-    // Check if clicking on an existing arrow handle
+    // Check hits on existing annotations (move mode or no tool)
     if (tool === 'move' || tool === null) {
+      // Check arrow handles
       for (const arrow of arrows) {
-        const dist1 = Math.hypot(x - arrow.x1, y - arrow.y1);
-        const dist2 = Math.hypot(x - arrow.x2, y - arrow.y2);
-        if (dist1 < 15 / imgSize.scale) {
-          setDragId(arrow.id); setDragHandle('start'); setDrawing(true); return;
+        if (Math.hypot(x - arrow.x1, y - arrow.y1) < hitRadius) {
+          setDragId(arrow.id); setDragType('arrow-start'); setDrawing(true); return;
         }
-        if (dist2 < 15 / imgSize.scale) {
-          setDragId(arrow.id); setDragHandle('end'); setDrawing(true); return;
+        if (Math.hypot(x - arrow.x2, y - arrow.y2) < hitRadius) {
+          setDragId(arrow.id); setDragType('arrow-end'); setDrawing(true); return;
         }
       }
-      for (const marker of numbers) {
-        const dist = Math.hypot(x - marker.x, y - marker.y);
-        if (dist < 20 / imgSize.scale) {
-          setDragId(marker.id); setDragHandle('marker'); setDrawing(true); return;
+      // Check text boxes
+      for (const tb of textBoxes) {
+        if (Math.abs(x - tb.x) < 60 / imgSize.scale && Math.abs(y - tb.y) < 20 / imgSize.scale) {
+          setDragId(tb.id); setDragType('text'); setDragOffset({ x: x - tb.x, y: y - tb.y }); setDrawing(true); return;
+        }
+      }
+      // Check rects — resize handle (bottom-right)
+      for (const r of rects) {
+        if (Math.abs(x - (r.x + r.w)) < hitRadius && Math.abs(y - (r.y + r.h)) < hitRadius) {
+          setDragId(r.id); setDragType('rect-resize'); setDrawing(true); return;
+        }
+        // Body drag
+        if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+          setDragId(r.id); setDragType('rect'); setDragOffset({ x: x - r.x, y: y - r.y }); setDrawing(true); return;
         }
       }
     }
@@ -223,10 +267,15 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
     if (tool === 'arrow') {
       setDrawStart({ x, y });
       setDrawing(true);
-    } else if (tool === 'number') {
-      const marker: NumberMarker = { id: crypto.randomUUID(), x, y, num: nextNum, color };
-      setNumbers((prev) => [...prev, marker]);
-      setNextNum((n) => n + 1);
+    } else if (tool === 'text') {
+      // Place a text box, then show input
+      const tb: TextBox = { id: crypto.randomUUID(), x, y, text: '', color };
+      setTextBoxes((prev) => [...prev, tb]);
+      setEditingTextId(tb.id);
+      setTextInput('');
+    } else if (tool === 'rect') {
+      setDrawStart({ x, y });
+      setDrawing(true);
     } else if (tool === 'crop') {
       setDrawStart({ x, y });
       setDrawing(true);
@@ -237,25 +286,25 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
     if (!drawing) return;
     const { x, y } = toImageCoords(e.clientX, e.clientY);
 
-    if (dragId && dragHandle) {
-      if (dragHandle === 'start' || dragHandle === 'end') {
-        setArrows((prev) => prev.map((a) => {
-          if (a.id !== dragId) return a;
-          return dragHandle === 'start' ? { ...a, x1: x, y1: y } : { ...a, x2: x, y2: y };
-        }));
-      } else if (dragHandle === 'marker') {
-        setNumbers((prev) => prev.map((m) => m.id === dragId ? { ...m, x, y } : m));
+    if (dragId && dragType) {
+      if (dragType === 'arrow-start') {
+        setArrows((prev) => prev.map((a) => a.id === dragId ? { ...a, x1: x, y1: y } : a));
+      } else if (dragType === 'arrow-end') {
+        setArrows((prev) => prev.map((a) => a.id === dragId ? { ...a, x2: x, y2: y } : a));
+      } else if (dragType === 'text') {
+        setTextBoxes((prev) => prev.map((t) => t.id === dragId ? { ...t, x: x - dragOffset.x, y: y - dragOffset.y } : t));
+      } else if (dragType === 'rect') {
+        setRects((prev) => prev.map((r) => r.id === dragId ? { ...r, x: x - dragOffset.x, y: y - dragOffset.y } : r));
+      } else if (dragType === 'rect-resize') {
+        setRects((prev) => prev.map((r) => r.id === dragId ? { ...r, w: Math.max(20, x - r.x), h: Math.max(20, y - r.y) } : r));
       }
-    } else if (tool === 'arrow' && drawStart) {
-      // Preview: handled by redraw with temp arrow
     } else if (tool === 'crop' && drawStart) {
       setCropRect({
-        x: Math.min(drawStart.x, x),
-        y: Math.min(drawStart.y, y),
-        w: Math.abs(x - drawStart.x),
-        h: Math.abs(y - drawStart.y),
+        x: Math.min(drawStart.x, x), y: Math.min(drawStart.y, y),
+        w: Math.abs(x - drawStart.x), h: Math.abs(y - drawStart.y),
       });
     }
+    // Arrow and rect draw preview handled via drawStart state
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
@@ -263,33 +312,35 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
     const { x, y } = toImageCoords(e.clientX, e.clientY);
 
     if (dragId) {
-      setDragId(null);
-      setDragHandle(null);
+      setDragId(null); setDragType(null);
     } else if (tool === 'arrow' && drawStart) {
-      const len = Math.hypot(x - drawStart.x, y - drawStart.y);
-      if (len > 10 / imgSize.scale) {
-        const arrow: Arrow = { id: crypto.randomUUID(), x1: drawStart.x, y1: drawStart.y, x2: x, y2: y, color };
-        setArrows((prev) => [...prev, arrow]);
+      if (Math.hypot(x - drawStart.x, y - drawStart.y) > 10 / imgSize.scale) {
+        setArrows((prev) => [...prev, { id: crypto.randomUUID(), x1: drawStart.x, y1: drawStart.y, x2: x, y2: y, color }]);
+      }
+      setDrawStart(null);
+    } else if (tool === 'rect' && drawStart) {
+      const w = Math.abs(x - drawStart.x);
+      const h = Math.abs(y - drawStart.y);
+      if (w > 10 / imgSize.scale && h > 10 / imgSize.scale) {
+        setRects((prev) => [...prev, { id: crypto.randomUUID(), x: Math.min(drawStart.x, x), y: Math.min(drawStart.y, y), w, h, color }]);
       }
       setDrawStart(null);
     } else if (tool === 'crop' && drawStart) {
       setDrawStart(null);
     }
-
     setDrawing(false);
   };
 
-  // Undo last annotation
   const undo = () => {
-    if (numbers.length > 0) {
-      setNumbers((prev) => prev.slice(0, -1));
-      setNextNum((n) => Math.max(1, n - 1));
-    } else if (arrows.length > 0) {
-      setArrows((prev) => prev.slice(0, -1));
-    }
+    if (textBoxes.length > 0) { setTextBoxes((prev) => prev.slice(0, -1)); }
+    else if (rects.length > 0) { setRects((prev) => prev.slice(0, -1)); }
+    else if (arrows.length > 0) { setArrows((prev) => prev.slice(0, -1)); }
   };
 
-  // Apply crop
+  const clearAll = () => {
+    setArrows([]); setTextBoxes([]); setRects([]); setCropRect(null);
+  };
+
   const applyCrop = () => {
     if (!cropRect || !imgRef.current) return;
     const img = imgRef.current;
@@ -306,19 +357,28 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
       setTool(null);
       // Remap annotations to cropped coords
       setArrows((prev) => prev.map((a) => ({
-        ...a,
-        x1: a.x1 - cropRect.x, y1: a.y1 - cropRect.y,
-        x2: a.x2 - cropRect.x, y2: a.y2 - cropRect.y,
+        ...a, x1: a.x1 - cropRect.x, y1: a.y1 - cropRect.y, x2: a.x2 - cropRect.x, y2: a.y2 - cropRect.y,
       })));
-      setNumbers((prev) => prev.map((m) => ({
-        ...m, x: m.x - cropRect.x, y: m.y - cropRect.y,
-      })));
+      setTextBoxes((prev) => prev.map((t) => ({ ...t, x: t.x - cropRect.x, y: t.y - cropRect.y })));
+      setRects((prev) => prev.map((r) => ({ ...r, x: r.x - cropRect.x, y: r.y - cropRect.y })));
       fitImage();
     };
     newImg.src = tempCanvas.toDataURL();
   };
 
-  // Save annotated image
+  const commitTextEdit = () => {
+    if (editingTextId) {
+      if (textInput.trim()) {
+        setTextBoxes((prev) => prev.map((t) => t.id === editingTextId ? { ...t, text: textInput.slice(0, 80) } : t));
+      } else {
+        // Remove empty text boxes
+        setTextBoxes((prev) => prev.filter((t) => t.id !== editingTextId));
+      }
+      setEditingTextId(null);
+      setTextInput('');
+    }
+  };
+
   const handleSave = () => {
     const img = imgRef.current;
     if (!img) return;
@@ -329,10 +389,19 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
     const ctx = exportCanvas.getContext('2d')!;
     ctx.drawImage(img, 0, 0);
 
-    // Draw arrows at full res
+    const s = 1; // export at native resolution
+
+    // Draw rectangles
+    for (const r of rects) {
+      ctx.strokeStyle = r.color;
+      ctx.lineWidth = 4 / imgSize.scale;
+      ctx.strokeRect(r.x, r.y, r.w, r.h);
+    }
+
+    // Draw arrows
     for (const arrow of arrows) {
       ctx.strokeStyle = arrow.color;
-      ctx.lineWidth = 3 / imgSize.scale;
+      ctx.lineWidth = 4 / imgSize.scale;
       ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(arrow.x1, arrow.y1);
@@ -340,7 +409,7 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
       ctx.stroke();
 
       const angle = Math.atan2(arrow.y2 - arrow.y1, arrow.x2 - arrow.x1);
-      const headLen = 14 / imgSize.scale;
+      const headLen = 18 / imgSize.scale;
       ctx.fillStyle = arrow.color;
       ctx.beginPath();
       ctx.moveTo(arrow.x2, arrow.y2);
@@ -350,17 +419,23 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
       ctx.fill();
     }
 
-    // Draw number markers at full res
-    for (const marker of numbers) {
-      ctx.fillStyle = marker.color;
-      ctx.beginPath();
-      ctx.arc(marker.x, marker.y, 14 / imgSize.scale, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.font = `bold ${14 / imgSize.scale}px system-ui`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(String(marker.num), marker.x, marker.y);
+    // Draw text boxes
+    for (const tb of textBoxes) {
+      const fontSize = 14 / imgSize.scale;
+      ctx.font = `bold ${fontSize}px system-ui`;
+      const metrics = ctx.measureText(tb.text || ' ');
+      const pad = 4 / imgSize.scale;
+      const bgW = metrics.width + pad * 2;
+      const bgH = fontSize + pad * 2;
+
+      const bgColor = tb.color === '#000000' || tb.color === '#ef4444' ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.7)';
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(tb.x - pad, tb.y - fontSize - pad, bgW, bgH);
+
+      ctx.fillStyle = tb.color;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(tb.text, tb.x, tb.y);
     }
 
     exportCanvas.toBlob((blob) => {
@@ -371,50 +446,61 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
   return (
     <div className="fixed inset-0 z-[70] bg-black flex flex-col">
       {/* Toolbar */}
-      <div className="bg-surface border-b border-border px-3 py-2 flex items-center justify-between safe-top">
-        <div className="flex items-center gap-1">
+      <div className="bg-surface border-b border-border px-2 py-1.5 flex items-center justify-between safe-top">
+        <div className="flex items-center gap-0.5">
           <ToolBtn icon={Move} active={tool === 'move'} onClick={() => setTool(tool === 'move' ? null : 'move')} label="Move" />
           <ToolBtn icon={ArrowRight} active={tool === 'arrow'} onClick={() => setTool('arrow')} label="Arrow" />
-          <ToolBtn icon={Hash} active={tool === 'number'} onClick={() => setTool('number')} label="Number" />
+          <ToolBtn icon={Type} active={tool === 'text'} onClick={() => setTool('text')} label="Text" />
+          <ToolBtn icon={Square} active={tool === 'rect'} onClick={() => setTool('rect')} label="Box" />
           <ToolBtn icon={Crop} active={tool === 'crop'} onClick={() => setTool('crop')} label="Crop" />
-          <div className="w-px h-6 bg-border mx-1" />
-          <button
-            onClick={() => setShowColorPicker(!showColorPicker)}
-            className="w-8 h-8 rounded-lg border-2 border-border flex items-center justify-center"
-            style={{ backgroundColor: color }}
-          >
-            <Palette className="w-3.5 h-3.5 text-white mix-blend-difference" />
-          </button>
+          <div className="w-px h-6 bg-border mx-0.5" />
+          {/* Color swatches inline */}
+          {COLORS.map((c) => (
+            <button
+              key={c}
+              onClick={() => setColor(c)}
+              className={`w-7 h-7 rounded-md border-2 transition-transform ${c === color ? 'border-accent scale-110' : 'border-gray-600'}`}
+              style={{ backgroundColor: c }}
+              title={COLOR_LABELS[c]}
+            />
+          ))}
+          <div className="w-px h-6 bg-border mx-0.5" />
           <ToolBtn icon={Undo2} active={false} onClick={undo} label="Undo" />
-          <ToolBtn icon={Trash2} active={false} onClick={() => { setArrows([]); setNumbers([]); setNextNum(1); setCropRect(null); }} label="Clear" />
+          <ToolBtn icon={Trash2} active={false} onClick={clearAll} label="Clear" />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {cropRect && (
-            <button onClick={applyCrop} className="text-xs bg-accent/20 text-accent px-3 py-1.5 rounded-lg font-medium">
-              Apply Crop
+            <button onClick={applyCrop} className="text-xs bg-accent/20 text-accent px-2 py-1 rounded-lg font-medium">
+              Crop
             </button>
           )}
-          <button onClick={onCancel} className="p-2 text-gray-400 hover:text-gray-200">
+          <button onClick={onCancel} className="p-1.5 text-gray-400 hover:text-gray-200">
             <X className="w-5 h-5" />
           </button>
-          <button onClick={handleSave} className="bg-accent text-white px-4 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5">
+          <button onClick={handleSave} className="bg-accent text-white px-3 py-1 rounded-lg text-sm font-medium flex items-center gap-1">
             <Check className="w-4 h-4" />
             Save
           </button>
         </div>
       </div>
 
-      {/* Color picker dropdown */}
-      {showColorPicker && (
-        <div className="absolute top-14 left-3 z-10 bg-surface border border-border rounded-lg p-2 flex gap-1.5 safe-top" style={{ marginTop: 'env(safe-area-inset-top)' }}>
-          {COLORS.map((c) => (
-            <button
-              key={c}
-              onClick={() => { setColor(c); setShowColorPicker(false); }}
-              className={`w-8 h-8 rounded-full border-2 transition-transform ${c === color ? 'border-white scale-110' : 'border-transparent'}`}
-              style={{ backgroundColor: c }}
-            />
-          ))}
+      {/* Text input overlay */}
+      {editingTextId && (
+        <div className="absolute top-12 left-0 right-0 z-20 bg-surface border-b border-border px-3 py-2 flex items-center gap-2 safe-top">
+          <input
+            type="text"
+            autoFocus
+            maxLength={80}
+            value={textInput}
+            onChange={(e) => setTextInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') commitTextEdit(); }}
+            placeholder="Label text (max 80 chars)..."
+            className="flex-1 bg-surface-base border border-border rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-accent"
+          />
+          <span className="text-[10px] text-gray-500 font-mono">{textInput.length}/80</span>
+          <button onClick={commitTextEdit} className="bg-accent text-white px-3 py-1.5 rounded-lg text-sm font-medium">
+            Add
+          </button>
         </div>
       )}
 
@@ -427,6 +513,18 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
         onPointerUp={handlePointerUp}
       >
         <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
+      </div>
+
+      {/* Tool hint */}
+      <div className="bg-surface border-t border-border px-3 py-1.5 text-center safe-bottom">
+        <span className="text-[10px] text-gray-500">
+          {tool === 'arrow' && 'Drag to draw arrow'}
+          {tool === 'text' && 'Tap to place text label'}
+          {tool === 'rect' && 'Drag to draw rectangle'}
+          {tool === 'crop' && 'Drag to select crop area'}
+          {tool === 'move' && 'Drag annotations to reposition'}
+          {tool === null && 'Select a tool above'}
+        </span>
       </div>
     </div>
   );

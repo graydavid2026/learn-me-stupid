@@ -30,17 +30,27 @@ function SlotDots({ slot }: { slot: number }) {
   );
 }
 
-function MediaBlockRenderer({ block }: { block: MediaBlock }) {
+function MediaBlockRenderer({ block, hasImage }: { block: MediaBlock; hasImage?: boolean }) {
   switch (block.block_type) {
-    case 'text':
+    case 'text': {
+      const text = block.text_content || '';
+      // When card has an image, shrink text and truncate to keep card compact
+      const textClass = hasImage
+        ? 'text-[13px] sm:text-sm leading-snug'  // smaller when image present
+        : text.length > 200
+          ? 'text-[13px] sm:text-base leading-snug'  // shrink for long text
+          : 'text-base sm:text-lg leading-relaxed';   // normal
+      const maxChars = hasImage ? 200 : 600;
+      const display = text.length > maxChars ? text.slice(0, maxChars) + '…' : text;
       return (
-        <div className="text-lg sm:text-xl text-gray-100 leading-relaxed whitespace-pre-wrap">
-          {block.text_content}
+        <div className={`${textClass} text-gray-100 whitespace-pre-wrap`}>
+          {display}
         </div>
       );
+    }
     case 'image':
       return block.file_path ? (
-        <img src={`/uploads/${block.file_path}`} alt={block.file_name || ''} className="max-h-[55vh] sm:max-h-[60vh] w-auto max-w-full rounded-lg mx-auto object-contain" />
+        <img src={`/uploads/${block.file_path}`} alt={block.file_name || ''} className="max-h-[40vh] sm:max-h-[50vh] w-auto max-w-full rounded-lg mx-auto object-contain" />
       ) : null;
     case 'audio':
       return block.file_path ? (
@@ -48,11 +58,11 @@ function MediaBlockRenderer({ block }: { block: MediaBlock }) {
       ) : null;
     case 'video':
       return block.file_path ? (
-        <video controls src={`/uploads/${block.file_path}`} className="max-h-[55vh] sm:max-h-[60vh] w-auto max-w-full rounded-lg mx-auto" playsInline />
+        <video controls src={`/uploads/${block.file_path}`} className="max-h-[40vh] sm:max-h-[50vh] w-auto max-w-full rounded-lg mx-auto" playsInline />
       ) : null;
     case 'youtube':
       return block.youtube_embed_id ? (
-        <div className="aspect-video w-full max-h-[55vh] sm:max-h-[60vh] mx-auto rounded-lg overflow-hidden">
+        <div className="aspect-video w-full max-h-[40vh] sm:max-h-[50vh] mx-auto rounded-lg overflow-hidden">
           <iframe
             src={`https://www.youtube.com/embed/${block.youtube_embed_id}`}
             className="w-full h-full"
@@ -401,16 +411,17 @@ export function StudyView() {
               </div>
 
               {/* Front content */}
-              <div className="flex flex-col items-center justify-center space-y-4 min-h-[120px] sm:min-h-[160px]">
-                {currentCard.front.media_blocks.map((block) => (
-                  <MediaBlockRenderer key={block.id} block={block} />
-                ))}
+              <div className="flex flex-col items-center justify-center space-y-3 min-h-[80px]">
+                {(() => {
+                  const hasImg = currentCard.front.media_blocks.some(b => b.block_type === 'image' || b.block_type === 'video');
+                  return currentCard.front.media_blocks.map((block) => (
+                    <MediaBlockRenderer key={block.id} block={block} hasImage={hasImg} />
+                  ));
+                })()}
               </div>
 
-              <div className="text-center mt-4">
-                <span className="text-xs text-gray-600">
-                  {'{'}tap to flip{'}'}
-                </span>
+              <div className="text-center mt-2">
+                <span className="text-[10px] text-gray-600">tap to flip</span>
               </div>
             </div>
 
@@ -422,17 +433,20 @@ export function StudyView() {
                 transform: 'rotateY(180deg)',
               }}
             >
-              <div className="text-xs uppercase tracking-wider text-gray-500 mb-4 text-center">Answer</div>
+              <div className="text-xs uppercase tracking-wider text-gray-500 mb-2 text-center">Answer</div>
 
               {/* Back content */}
-              <div className="flex flex-col items-center justify-center space-y-4 min-h-[120px] sm:min-h-[160px]">
-                {currentCard.back.media_blocks.map((block) => (
-                  <MediaBlockRenderer key={block.id} block={block} />
-                ))}
+              <div className="flex flex-col items-center justify-center space-y-3 min-h-[80px]">
+                {(() => {
+                  const hasImg = currentCard.back.media_blocks.some(b => b.block_type === 'image' || b.block_type === 'video');
+                  return currentCard.back.media_blocks.map((block) => (
+                    <MediaBlockRenderer key={block.id} block={block} hasImage={hasImg} />
+                  ));
+                })()}
               </div>
 
               {/* Correct / Wrong buttons */}
-              <div className="border-t border-border mt-6 pt-4">
+              <div className="border-t border-border mt-3 pt-3">
                 <div className="flex gap-3">
                   <button
                     onClick={(e) => { e.stopPropagation(); handleGrade('wrong'); }}
