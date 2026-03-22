@@ -59,23 +59,25 @@ export function isAlreadyReviewedToday(lastReviewedAt: string | null): boolean {
 /**
  * Calculate decayed tier based on how overdue a card is.
  * Rules:
- *   - Not overdue → no decay
+ *   - Not overdue → no decay (even if absent for months — only due cards decay)
+ *   - No due date set → no decay
  *   - Overdue by 1x grace period (1x interval) → drop 1 tier
  *   - Each additional grace period missed → drop 1 more tier
- *   - 60+ days no engagement → full reset to 0
+ *   - High tiers (6mo/3mo) are hard-won — cap decay at half the tier (round up)
+ *     e.g., tier 8 (6mo) can only decay to tier 4 max, not to 0
+ *   - Lower tiers (1-4) can decay to 0 normally
  */
 export function calculateDecayedTier(currentTier: number, nextDueAt: string | null): number {
+  // No due date or already tier 0 → no decay
   if (!nextDueAt || currentTier === 0) return currentTier;
 
   const now = Date.now();
   const due = new Date(nextDueAt).getTime();
-  if (now <= due) return currentTier; // not overdue
+
+  // Not overdue → no decay, regardless of how long until next review
+  if (now <= due) return currentTier;
 
   const overdueMs = now - due;
-  const overdueDays = Math.floor(overdueMs / 86_400_000);
-
-  // 60 days no engagement → full reset
-  if (overdueDays >= 60) return 0;
 
   // Grace period = 1x the tier's interval
   const tierInterval = TIER_INTERVALS_MS[currentTier] || TIER_INTERVALS_MS[1];
@@ -85,7 +87,15 @@ export function calculateDecayedTier(currentTier: number, nextDueAt: string | nu
 
   // Each full grace period missed = 1 tier drop
   const drops = Math.floor(overdueMs / graceMs);
-  return Math.max(0, currentTier - drops);
+  if (drops === 0) return currentTier;
+
+  // For high tiers (6+), cap decay at halfway — these were hard-won
+  // Tier 8 (6mo) → min tier 4. Tier 7 (3mo) → min tier 4. Tier 6 (1mo) → min tier 3.
+  const minTier = currentTier >= 6
+    ? Math.ceil(currentTier / 2)
+    : 0;
+
+  return Math.max(minTier, currentTier - drops);
 }
 
 export interface ReviewResult {
