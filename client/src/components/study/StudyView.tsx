@@ -31,25 +31,25 @@ function MediaBlockRenderer({ block }: { block: MediaBlock }) {
   switch (block.block_type) {
     case 'text':
       return (
-        <div className="text-lg text-gray-100 leading-relaxed whitespace-pre-wrap">
+        <div className="text-lg sm:text-xl text-gray-100 leading-relaxed whitespace-pre-wrap">
           {block.text_content}
         </div>
       );
     case 'image':
       return block.file_path ? (
-        <img src={`/uploads/${block.file_path}`} alt={block.file_name || ''} className="max-h-64 rounded-lg mx-auto" />
+        <img src={`/uploads/${block.file_path}`} alt={block.file_name || ''} className="max-h-[55vh] sm:max-h-[60vh] w-auto max-w-full rounded-lg mx-auto object-contain" />
       ) : null;
     case 'audio':
       return block.file_path ? (
-        <audio controls src={`/uploads/${block.file_path}`} className="w-full max-w-md mx-auto" />
+        <audio controls src={`/uploads/${block.file_path}`} className="w-full mx-auto" />
       ) : null;
     case 'video':
       return block.file_path ? (
-        <video controls src={`/uploads/${block.file_path}`} className="max-h-64 rounded-lg mx-auto" />
+        <video controls src={`/uploads/${block.file_path}`} className="max-h-[55vh] sm:max-h-[60vh] w-auto max-w-full rounded-lg mx-auto" playsInline />
       ) : null;
     case 'youtube':
       return block.youtube_embed_id ? (
-        <div className="aspect-video max-w-lg mx-auto rounded-lg overflow-hidden">
+        <div className="aspect-video w-full max-h-[55vh] sm:max-h-[60vh] mx-auto rounded-lg overflow-hidden">
           <iframe
             src={`https://www.youtube.com/embed/${block.youtube_embed_id}`}
             className="w-full h-full"
@@ -279,7 +279,7 @@ export function StudyView() {
   // --- ACTIVE SESSION ---
   if (sessionActive && currentCard) {
     return (
-      <div className="max-w-2xl mx-auto">
+      <div className="max-w-5xl mx-auto px-2 sm:px-4">
         {/* Progress bar */}
         <div className="flex items-center justify-between mb-3 sm:mb-4">
           <div className="flex items-center gap-2">
@@ -312,7 +312,7 @@ export function StudyView() {
         </div>
 
         {/* Card */}
-        <div className="card p-4 sm:p-8 min-h-[250px] sm:min-h-[300px] flex flex-col">
+        <div className="card p-4 sm:p-6 flex flex-col">
           {/* Card meta */}
           <div className="flex items-center justify-between mb-6">
             <TierDots tier={currentCard.sr_tier} />
@@ -326,7 +326,7 @@ export function StudyView() {
           </div>
 
           {/* Card content */}
-          <div className="flex-1 flex flex-col items-center justify-center space-y-4 overflow-hidden">
+          <div className="flex-1 flex flex-col items-center justify-center space-y-4">
             <AnimatePresence mode="wait">
               {!flipped ? (
                 <motion.div
