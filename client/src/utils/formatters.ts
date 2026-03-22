@@ -1,7 +1,7 @@
 // Centralized formatters and heat-level color coding
 // Adapted from Grid Wars chartStyles + metricDefinitions
 
-import { TIER_LABELS } from '@shared/types';
+import { SLOT_LABELS } from '@shared/types';
 
 // ─── Heat levels (good/mid/bad) ──────────────────────────────────────────────
 
@@ -37,18 +37,25 @@ export function getStreakHeat(streak: number): HeatLevel {
   return 'bad';
 }
 
-// ─── Tier colors ─────────────────────────────────────────────────────────────
+// ─── Slot colors (13-slot SR system) ─────────────────────────────────────────
 
-export const TIER_COLORS: Record<number, string> = {
-  0: '#ef4444', 1: '#f97316', 2: '#f59e0b', 3: '#eab308',
-  4: '#84cc16', 5: '#22c55e', 6: '#14b8a6', 7: '#06b6d4', 8: '#22c55e',
+export const SLOT_COLORS: Record<number, string> = {
+  0: '#6b7280', 1: '#ef4444', 2: '#f97316', 3: '#f59e0b',
+  4: '#eab308', 5: '#a3e635', 6: '#84cc16', 7: '#22c55e',
+  8: '#10b981', 9: '#14b8a6', 10: '#06b6d4', 11: '#3b82f6',
+  12: '#8b5cf6', 13: '#a855f7',
 };
 
-export function getTierHeat(tier: number): HeatLevel {
-  if (tier >= 6) return 'good';
-  if (tier >= 3) return 'mid';
+// Backward compat alias
+export const TIER_COLORS = SLOT_COLORS;
+
+export function getSlotHeat(slot: number): HeatLevel {
+  if (slot >= 10) return 'good';
+  if (slot >= 4) return 'mid';
   return 'bad';
 }
+
+export const getTierHeat = getSlotHeat;
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
 
@@ -56,7 +63,8 @@ export const fmt = {
   pct: (v: number) => `${Math.round(v)}%`,
   pctDecimal: (v: number) => `${v.toFixed(1)}%`,
   count: (v: number) => v.toLocaleString(),
-  tier: (t: number) => TIER_LABELS[t] ?? `T${t}`,
+  tier: (t: number) => SLOT_LABELS[t] ?? `S${t}`,
+  slot: (s: number) => SLOT_LABELS[s] ?? `S${s}`,
   streak: (days: number) => `${days} day${days !== 1 ? 's' : ''}`,
   interval: (ms: number) => {
     const hours = ms / (1000 * 60 * 60);

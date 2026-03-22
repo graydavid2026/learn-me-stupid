@@ -54,11 +54,10 @@ export interface CardFull {
   tags: string;
   created_at: string;
   updated_at: string;
-  sr_tier: number;
+  sr_slot: number;
   sr_last_reviewed_at: string | null;
   sr_next_due_at: string | null;
-  sr_consecutive_correct: number;
-  sr_consecutive_wrong: number;
+  sr_grace_deadline: string | null;
   sr_total_reviews: number;
   sr_total_correct: number;
   sr_is_active: number;

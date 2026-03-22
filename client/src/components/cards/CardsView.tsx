@@ -3,16 +3,16 @@ import { useEffect, useState } from 'react';
 import { Plus, FolderOpen, Trash2, Check, X, Pencil, ChevronRight, FileText, Layers } from 'lucide-react';
 import { CardEditor } from './CardEditor';
 import { DeleteConfirmModal } from '../ui/DeleteConfirmModal';
-import { TIER_COLORS } from '../../utils/formatters';
+import { SLOT_COLORS } from '../../utils/formatters';
 
-function TierDots({ tier }: { tier: number }) {
+function SlotDots({ slot }: { slot: number }) {
   return (
     <div className="flex gap-0.5">
-      {Array.from({ length: 9 }, (_, i) => (
+      {Array.from({ length: 13 }, (_, i) => (
         <div
           key={i}
           className="w-1.5 h-1.5 rounded-full"
-          style={{ backgroundColor: i <= tier ? TIER_COLORS[tier] : '#2e3348' }}
+          style={{ backgroundColor: i < slot ? SLOT_COLORS[slot] : '#2e3348' }}
         />
       ))}
     </div>
@@ -241,7 +241,7 @@ export function CardsView() {
                           )}
                         </div>
                         <div className="flex items-center gap-3 shrink-0">
-                          <TierDots tier={card.sr_tier} />
+                          <SlotDots slot={card.sr_slot} />
                           {JSON.parse(card.tags || '[]').length > 0 && (
                             <div className="flex gap-1">
                               {(JSON.parse(card.tags || '[]') as string[]).slice(0, 2).map((tag) => (

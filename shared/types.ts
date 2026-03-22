@@ -152,26 +152,32 @@ export interface ReviewRequest {
 
 // === SR Types ===
 
-export const TIER_LABELS: Record<number, string> = {
-  0: 'New',
-  1: '4h',
-  2: '1d',
-  3: '2d',
-  4: '1w',
-  5: '2w',
-  6: '1mo',
-  7: '3mo',
-  8: '6mo',
+export const SLOT_LABELS: Record<number, string> = {
+  0: 'New', 1: '5m', 2: '1h', 3: '4h', 4: '1d', 5: '2d', 6: '1w',
+  7: '2w', 8: '4w', 9: '8w', 10: '3mo', 11: '6mo', 12: '9mo', 13: '1yr',
 };
 
-export const TIER_INTERVALS_MS: Record<number, number> = {
-  0: 0,
-  1: 4 * 60 * 60 * 1000,
-  2: 24 * 60 * 60 * 1000,
-  3: 2 * 24 * 60 * 60 * 1000,
-  4: 7 * 24 * 60 * 60 * 1000,
-  5: 14 * 24 * 60 * 60 * 1000,
-  6: 30 * 24 * 60 * 60 * 1000,
-  7: 90 * 24 * 60 * 60 * 1000,
-  8: 180 * 24 * 60 * 60 * 1000,
+// Keep TIER_LABELS as alias for backward compat during migration
+export const TIER_LABELS = SLOT_LABELS;
+
+const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
+const WEEK = 7 * DAY;
+
+export const SLOT_INTERVALS_MS: Record<number, number> = {
+  1: 5 * 60 * 1000,
+  2: 1 * HOUR,
+  3: 4 * HOUR,
+  4: 1 * DAY,
+  5: 2 * DAY,
+  6: 1 * WEEK,
+  7: 2 * WEEK,
+  8: 4 * WEEK,
+  9: 8 * WEEK,
+  10: 90 * DAY,
+  11: 180 * DAY,
+  12: 270 * DAY,
+  13: 365 * DAY,
 };
+
+export const TIER_INTERVALS_MS = SLOT_INTERVALS_MS;

@@ -1,7 +1,16 @@
 import { Router } from 'express';
 import { queryAll, queryOne, run } from '../db/index.js';
 import { v4 as uuid } from 'uuid';
-import { processReview, calculateDecayedTier, TIER_LABELS } from '../services/srEngine.js';
+import {
+  processReview,
+  calculateCascadeRegression,
+  calculateNextDue,
+  calculateGraceDeadline,
+  SLOT_LABELS,
+  SLOT_TRANCHE,
+  TRANCHE_NAMES,
+  MAX_SLOT,
+} from '../services/srEngine.js';
 
 const router = Router();
 
@@ -9,7 +18,7 @@ function genId(): string {
   return uuid().replace(/-/g, '').slice(0, 16);
 }
 
-// Helper: get full card with sides and media blocks (same as cards route)
+// Helper: get full card with sides and media blocks
 function getFullCard(cardId: string) {
   const card = queryOne('SELECT * FROM cards WHERE id = ?', [cardId]);
   if (!card) return null;
@@ -41,7 +50,7 @@ function getFullCard(cardId: string) {
 // GET /api/study/due — Get all due cards (with filters)
 router.get('/due', (req, res) => {
   try {
-    const { topic, set, tags, tierMin, tierMax } = req.query;
+    const { topic, set, tags, slotMin, slotMax } = req.query;
 
     let sql = `
       SELECT c.* FROM cards c
@@ -59,21 +68,20 @@ router.get('/due', (req, res) => {
       sql += ' AND c.card_set_id = ?';
       params.push(set);
     }
-    if (tierMin !== undefined) {
-      sql += ' AND c.sr_tier >= ?';
-      params.push(Number(tierMin));
+    if (slotMin !== undefined) {
+      sql += ' AND c.sr_slot >= ?';
+      params.push(Number(slotMin));
     }
-    if (tierMax !== undefined) {
-      sql += ' AND c.sr_tier <= ?';
-      params.push(Number(tierMax));
+    if (slotMax !== undefined) {
+      sql += ' AND c.sr_slot <= ?';
+      params.push(Number(slotMax));
     }
 
-    sql += ' ORDER BY c.sr_tier ASC, c.sr_next_due_at ASC';
+    sql += ' ORDER BY c.sr_slot ASC, c.sr_next_due_at ASC';
 
     const cards = queryAll(sql, params);
     let fullCards = cards.map((c: any) => getFullCard(c.id)).filter(Boolean);
 
-    // Filter by tags if specified
     if (tags) {
       const tagList = (tags as string).split(',').map((t) => t.trim().toLowerCase());
       fullCards = fullCards.filter((c: any) => {
@@ -139,49 +147,41 @@ router.get('/stats', (req, res) => {
       params.push(topic);
     }
 
-    // Total cards
     const total = queryOne(
       `SELECT COUNT(*) as count FROM cards c JOIN card_sets cs ON cs.id = c.card_set_id ${whereClause}`,
       params
     );
 
-    // Due today
     const dueToday = queryOne(
       `SELECT COUNT(*) as count FROM cards c JOIN card_sets cs ON cs.id = c.card_set_id ${whereClause} AND (c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime('now'))`,
       params
     );
 
-    // Overdue (due date more than 1 day in the past)
     const overdue = queryOne(
-      `SELECT COUNT(*) as count FROM cards c JOIN card_sets cs ON cs.id = c.card_set_id ${whereClause} AND c.sr_next_due_at <= datetime('now', '-1 day')`,
+      `SELECT COUNT(*) as count FROM cards c JOIN card_sets cs ON cs.id = c.card_set_id ${whereClause} AND c.sr_grace_deadline IS NOT NULL AND c.sr_grace_deadline <= datetime('now')`,
       params
     );
 
-    // Tier distribution
-    const tierDist = queryAll(
-      `SELECT c.sr_tier as tier, COUNT(*) as count FROM cards c JOIN card_sets cs ON cs.id = c.card_set_id ${whereClause} GROUP BY c.sr_tier ORDER BY c.sr_tier`,
+    const slotDist = queryAll(
+      `SELECT c.sr_slot as slot, COUNT(*) as count FROM cards c JOIN card_sets cs ON cs.id = c.card_set_id ${whereClause} GROUP BY c.sr_slot ORDER BY c.sr_slot`,
       params
     );
 
-    // Mastered (tier 7-8)
     const mastered = queryOne(
-      `SELECT COUNT(*) as count FROM cards c JOIN card_sets cs ON cs.id = c.card_set_id ${whereClause} AND c.sr_tier >= 7`,
+      `SELECT COUNT(*) as count FROM cards c JOIN card_sets cs ON cs.id = c.card_set_id ${whereClause} AND c.sr_slot >= 12`,
       params
     );
 
-    // New (tier 0)
     const newCards = queryOne(
-      `SELECT COUNT(*) as count FROM cards c JOIN card_sets cs ON cs.id = c.card_set_id ${whereClause} AND c.sr_tier = 0`,
+      `SELECT COUNT(*) as count FROM cards c JOIN card_sets cs ON cs.id = c.card_set_id ${whereClause} AND c.sr_slot = 0`,
       params
     );
 
-    // Reviews today
     const reviewsToday = queryOne(
       `SELECT COUNT(*) as count, SUM(CASE WHEN result = 'correct' THEN 1 ELSE 0 END) as correct FROM review_log WHERE reviewed_at >= date('now')`,
       []
     );
 
-    // Streak (consecutive days with reviews)
     const recentDays = queryAll(
       `SELECT DISTINCT date(reviewed_at) as day FROM review_log ORDER BY day DESC LIMIT 60`,
       []
@@ -208,7 +208,7 @@ router.get('/stats', (req, res) => {
       reviewsToday: reviewsToday?.count || 0,
       correctToday: reviewsToday?.correct || 0,
       streak,
-      tierDistribution: tierDist,
+      slotDistribution: slotDist,
     });
   } catch (err) {
     console.error('Error fetching stats:', err);
@@ -237,7 +237,7 @@ router.get('/history', (req, res) => {
   }
 });
 
-// GET /api/study/timeline — Spaced repetition timeline (upcoming due cards per day)
+// GET /api/study/timeline — Upcoming due cards per day
 router.get('/timeline', (req, res) => {
   try {
     const { topic, days: daysParam } = req.query;
@@ -255,12 +255,9 @@ router.get('/timeline', (req, res) => {
     }
 
     const result: { day: string; due: number; overdue: number; label: string }[] = [];
-
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
     for (let i = 0; i < days; i++) {
-      // Build date strings for the day range
-      const offsetStr = i === 0 ? '' : `'+${i} days'`;
       const dayStart = i === 0 ? "date('now')" : `date('now', '+${i} days')`;
       const dayEnd = i === 0 ? "date('now', '+1 day')" : `date('now', '+${i + 1} days')`;
 
@@ -268,7 +265,6 @@ router.get('/timeline', (req, res) => {
       let overdue = 0;
 
       if (i === 0) {
-        // Today: due = cards with sr_next_due_at <= now, overdue = cards due more than 1 day ago
         const dueRow = queryOne(
           `SELECT COUNT(*) as count FROM cards c${topicJoin}
            WHERE c.sr_is_active = 1${topicWhere}
@@ -278,13 +274,12 @@ router.get('/timeline', (req, res) => {
         const overdueRow = queryOne(
           `SELECT COUNT(*) as count FROM cards c${topicJoin}
            WHERE c.sr_is_active = 1${topicWhere}
-             AND c.sr_next_due_at <= datetime('now', '-1 day')`,
+             AND c.sr_grace_deadline IS NOT NULL AND c.sr_grace_deadline <= datetime('now')`,
           topic ? [topic] : []
         );
         due = dueRow?.count || 0;
         overdue = overdueRow?.count || 0;
       } else {
-        // Future day: count cards where sr_next_due_at falls within that day
         const row = queryOne(
           `SELECT COUNT(*) as count FROM cards c${topicJoin}
            WHERE c.sr_is_active = 1${topicWhere}
@@ -296,7 +291,6 @@ router.get('/timeline', (req, res) => {
         overdue = 0;
       }
 
-      // Compute the actual date for labels
       const d = new Date();
       d.setDate(d.getDate() + i);
       const isoDay = d.toISOString().slice(0, 10);
@@ -324,63 +318,49 @@ router.post('/review', (req, res) => {
     const card = queryOne('SELECT * FROM cards WHERE id = ?', [cardId]);
     if (!card) return res.status(404).json({ error: 'Card not found' });
 
-    const tierBefore = card.sr_tier;
+    const slotBefore = card.sr_slot;
 
     const reviewResult = processReview(
       result,
-      card.sr_tier,
-      card.sr_consecutive_correct,
-      card.sr_consecutive_wrong,
-      card.sr_last_reviewed_at,
+      card.sr_slot,
       card.sr_next_due_at
     );
 
     // Always log the review
     run(
-      `INSERT INTO review_log (id, card_id, result, tier_before, tier_after, response_time_ms)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [genId(), cardId, result, tierBefore, reviewResult.newTier, response_time_ms || null]
+      `INSERT INTO review_log (id, card_id, result, slot_before, slot_after, next_due_at, review_type, response_time_ms)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [genId(), cardId, result, slotBefore, reviewResult.newSlot, reviewResult.nextDueAt, reviewResult.reviewType, response_time_ms || null]
     );
 
     // Update card SR state
     if (reviewResult.scheduleLocked) {
-      // Already reviewed today — update counters and tier but NOT schedule
+      // Early review — update counters only, don't change schedule
       run(
         `UPDATE cards SET
-          sr_tier = ?,
-          sr_consecutive_correct = ?,
-          sr_consecutive_wrong = ?,
           sr_total_reviews = sr_total_reviews + 1,
           sr_total_correct = sr_total_correct + ?,
           sr_last_reviewed_at = datetime('now'),
           updated_at = datetime('now')
         WHERE id = ?`,
-        [
-          reviewResult.newTier,
-          reviewResult.consecutiveCorrect,
-          reviewResult.consecutiveWrong,
-          result === 'correct' ? 1 : 0,
-          cardId,
-        ]
+        [result === 'correct' ? 1 : 0, cardId]
       );
     } else {
-      // First review of the day — set full schedule
+      // Standard review — update slot + schedule
       run(
         `UPDATE cards SET
-          sr_tier = ?,
+          sr_slot = ?,
           sr_next_due_at = ?,
-          sr_consecutive_correct = ?,
-          sr_consecutive_wrong = ?,
+          sr_grace_deadline = ?,
           sr_total_reviews = sr_total_reviews + 1,
           sr_total_correct = sr_total_correct + ?,
           sr_last_reviewed_at = datetime('now'),
           updated_at = datetime('now')
         WHERE id = ?`,
         [
-          reviewResult.newTier,
+          reviewResult.newSlot,
           reviewResult.nextDueAt,
-          reviewResult.consecutiveCorrect,
-          reviewResult.consecutiveWrong,
+          reviewResult.graceDeadline,
           result === 'correct' ? 1 : 0,
           cardId,
         ]
@@ -390,9 +370,10 @@ router.post('/review', (req, res) => {
     const updatedCard = getFullCard(cardId);
     res.json({
       card: updatedCard,
-      tierBefore,
-      tierAfter: reviewResult.newTier,
+      slotBefore,
+      slotAfter: reviewResult.newSlot,
       scheduleLocked: reviewResult.scheduleLocked,
+      reviewType: reviewResult.reviewType,
     });
   } catch (err) {
     console.error('Error submitting review:', err);
@@ -400,27 +381,29 @@ router.post('/review', (req, res) => {
   }
 });
 
-// POST /api/study/decay-check — Run decay on all active cards
+// POST /api/study/decay-check — Run cascade regression on all active cards
 router.post('/decay-check', (_req, res) => {
   try {
     const cards = queryAll(
-      'SELECT id, sr_tier, sr_next_due_at FROM cards WHERE sr_is_active = 1 AND sr_next_due_at IS NOT NULL',
+      'SELECT id, sr_slot, sr_next_due_at FROM cards WHERE sr_is_active = 1 AND sr_next_due_at IS NOT NULL AND sr_slot > 0',
       []
     );
 
-    let decayed = 0;
+    let regressed = 0;
     for (const card of cards) {
-      const newTier = calculateDecayedTier(card.sr_tier, card.sr_next_due_at);
-      if (newTier !== card.sr_tier) {
+      const newSlot = calculateCascadeRegression(card.sr_slot, card.sr_next_due_at);
+      if (newSlot !== card.sr_slot) {
+        const newNextDueAt = calculateNextDue(newSlot);
+        const newGraceDeadline = calculateGraceDeadline(newNextDueAt, newSlot);
         run(
-          'UPDATE cards SET sr_tier = ?, sr_consecutive_correct = 0, updated_at = datetime(\'now\') WHERE id = ?',
-          [newTier, card.id]
+          `UPDATE cards SET sr_slot = ?, sr_next_due_at = ?, sr_grace_deadline = ?, updated_at = datetime('now') WHERE id = ?`,
+          [newSlot, newNextDueAt, newGraceDeadline, card.id]
         );
-        decayed++;
+        regressed++;
       }
     }
 
-    res.json({ checked: cards.length, decayed });
+    res.json({ checked: cards.length, regressed });
   } catch (err) {
     console.error('Error running decay check:', err);
     res.status(500).json({ error: 'Failed to run decay check' });
@@ -432,7 +415,6 @@ router.get('/calendar', (req, res) => {
   try {
     const days = Math.min(Number(req.query.days) || 60, 120);
 
-    // Due cards per day per topic (next N days)
     const upcoming: any[] = [];
     for (let i = 0; i < days; i++) {
       const dayStart = i === 0 ? "datetime('now')" : `datetime('now', '+${i} days', 'start of day')`;
@@ -475,7 +457,6 @@ router.get('/calendar', (req, res) => {
       }
     }
 
-    // Review history per day per topic (last 60 days)
     const history = queryAll(
       `SELECT date(rl.reviewed_at) as day, t.id as topic_id, t.name as topic_name, t.color as topic_color,
               COUNT(*) as total,
@@ -500,15 +481,14 @@ router.get('/calendar', (req, res) => {
 // GET /api/study/forecast — Workload prediction across all topics
 router.get('/forecast', (_req, res) => {
   try {
-    // Per-topic summary
     const topicSummaries = queryAll(
       `SELECT t.id, t.name, t.color,
               COUNT(c.id) as total_cards,
               SUM(CASE WHEN c.sr_is_active = 1 AND (c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime('now')) THEN 1 ELSE 0 END) as due_now,
-              SUM(CASE WHEN c.sr_tier >= 7 THEN 1 ELSE 0 END) as mastered,
-              SUM(CASE WHEN c.sr_tier = 0 THEN 1 ELSE 0 END) as new_cards,
-              AVG(c.sr_tier) as avg_tier,
-              SUM(CASE WHEN c.sr_is_active = 1 AND c.sr_next_due_at <= datetime('now', '-1 day') THEN 1 ELSE 0 END) as overdue
+              SUM(CASE WHEN c.sr_slot >= 12 THEN 1 ELSE 0 END) as mastered,
+              SUM(CASE WHEN c.sr_slot = 0 THEN 1 ELSE 0 END) as new_cards,
+              AVG(c.sr_slot) as avg_slot,
+              SUM(CASE WHEN c.sr_is_active = 1 AND c.sr_grace_deadline IS NOT NULL AND c.sr_grace_deadline <= datetime('now') THEN 1 ELSE 0 END) as overdue
        FROM topics t
        LEFT JOIN card_sets cs ON cs.topic_id = t.id
        LEFT JOIN cards c ON c.card_set_id = cs.id
@@ -517,7 +497,6 @@ router.get('/forecast', (_req, res) => {
       []
     );
 
-    // Week forecast (next 7 days)
     const weekForecast = [];
     for (let i = 0; i < 7; i++) {
       const dayStart = i === 0 ? "datetime('now')" : `datetime('now', '+${i} days', 'start of day')`;
@@ -560,22 +539,20 @@ router.get('/topic-sr/:topicId', (req, res) => {
   try {
     const { topicId } = req.params;
 
-    // Tier distribution
-    const tierDist = queryAll(
-      `SELECT c.sr_tier as tier, COUNT(*) as count
+    const slotDist = queryAll(
+      `SELECT c.sr_slot as slot, COUNT(*) as count
        FROM cards c JOIN card_sets cs ON cs.id = c.card_set_id
        WHERE cs.topic_id = ? AND c.sr_is_active = 1
-       GROUP BY c.sr_tier ORDER BY c.sr_tier`,
+       GROUP BY c.sr_slot ORDER BY c.sr_slot`,
       [topicId]
     );
 
-    // Per-set breakdown
     const sets = queryAll(
       `SELECT cs.id, cs.name,
               COUNT(c.id) as total,
               SUM(CASE WHEN c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime('now') THEN 1 ELSE 0 END) as due,
-              SUM(CASE WHEN c.sr_tier >= 7 THEN 1 ELSE 0 END) as mastered,
-              AVG(c.sr_tier) as avg_tier
+              SUM(CASE WHEN c.sr_slot >= 12 THEN 1 ELSE 0 END) as mastered,
+              AVG(c.sr_slot) as avg_slot
        FROM card_sets cs
        LEFT JOIN cards c ON c.card_set_id = cs.id AND c.sr_is_active = 1
        WHERE cs.topic_id = ?
@@ -583,9 +560,8 @@ router.get('/topic-sr/:topicId', (req, res) => {
       [topicId]
     );
 
-    // Cards with their SR state (for timeline visualization)
     const cards = queryAll(
-      `SELECT c.id, c.sr_tier, c.sr_next_due_at, c.sr_last_reviewed_at, c.sr_total_reviews, c.sr_total_correct, cs.name as set_name,
+      `SELECT c.id, c.sr_slot, c.sr_next_due_at, c.sr_grace_deadline, c.sr_last_reviewed_at, c.sr_total_reviews, c.sr_total_correct, cs.name as set_name,
               (SELECT mb.text_content FROM card_sides s JOIN media_blocks mb ON mb.card_side_id = s.id WHERE s.card_id = c.id AND s.side = 0 AND mb.block_type = 'text' LIMIT 1) as preview
        FROM cards c JOIN card_sets cs ON cs.id = c.card_set_id
        WHERE cs.topic_id = ? AND c.sr_is_active = 1
@@ -593,7 +569,6 @@ router.get('/topic-sr/:topicId', (req, res) => {
       [topicId]
     );
 
-    // Recent accuracy for this topic
     const accuracy = queryAll(
       `SELECT date(rl.reviewed_at) as day,
               COUNT(*) as total,
@@ -607,10 +582,9 @@ router.get('/topic-sr/:topicId', (req, res) => {
       [topicId]
     );
 
-    // Topic info
     const topic = queryOne('SELECT * FROM topics WHERE id = ?', [topicId]);
 
-    res.json({ topic, tierDistribution: tierDist, sets, cards, accuracy });
+    res.json({ topic, slotDistribution: slotDist, sets, cards, accuracy });
   } catch (err) {
     console.error('Error fetching topic SR:', err);
     res.status(500).json({ error: 'Failed to fetch topic SR data' });

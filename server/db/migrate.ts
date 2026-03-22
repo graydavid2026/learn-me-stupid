@@ -1,4 +1,4 @@
-import { initDb, exec } from './index.js';
+import { initDb, exec, queryAll } from './index.js';
 // initDb is used when running as standalone script
 
 export async function migrate(): Promise<void> {
@@ -34,11 +34,10 @@ export async function migrate(): Promise<void> {
       tags TEXT DEFAULT '[]',
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
-      sr_tier INTEGER DEFAULT 0,
+      sr_slot INTEGER DEFAULT 0,
       sr_last_reviewed_at TEXT,
       sr_next_due_at TEXT,
-      sr_consecutive_correct INTEGER DEFAULT 0,
-      sr_consecutive_wrong INTEGER DEFAULT 0,
+      sr_grace_deadline TEXT,
       sr_total_reviews INTEGER DEFAULT 0,
       sr_total_correct INTEGER DEFAULT 0,
       sr_is_active INTEGER DEFAULT 1
@@ -93,19 +92,60 @@ export async function migrate(): Promise<void> {
       card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
       reviewed_at TEXT DEFAULT (datetime('now')),
       result TEXT NOT NULL CHECK (result IN ('correct', 'wrong')),
-      tier_before INTEGER NOT NULL,
-      tier_after INTEGER NOT NULL,
+      slot_before INTEGER NOT NULL,
+      slot_after INTEGER NOT NULL,
+      next_due_at TEXT,
+      review_type TEXT DEFAULT 'standard',
       response_time_ms INTEGER
     );
 
     CREATE INDEX IF NOT EXISTS idx_cards_set ON cards(card_set_id);
     CREATE INDEX IF NOT EXISTS idx_cards_due ON cards(sr_next_due_at, sr_is_active);
-    CREATE INDEX IF NOT EXISTS idx_cards_tier ON cards(sr_tier);
+    CREATE INDEX IF NOT EXISTS idx_cards_slot ON cards(sr_slot);
     CREATE INDEX IF NOT EXISTS idx_card_sides ON card_sides(card_id, side);
     CREATE INDEX IF NOT EXISTS idx_media_blocks ON media_blocks(card_side_id, sort_order);
     CREATE INDEX IF NOT EXISTS idx_mindmap_nodes_topic ON mindmap_nodes(topic_id);
     CREATE INDEX IF NOT EXISTS idx_review_log_card ON review_log(card_id, reviewed_at);
   `);
+
+  // Migration: rename sr_tier → sr_slot if old schema exists
+  try {
+    const cols = queryAll(`PRAGMA table_info(cards)`);
+    const hasOldTier = cols.some((c: any) => c.name === 'sr_tier');
+    const hasNewSlot = cols.some((c: any) => c.name === 'sr_slot');
+    const hasGrace = cols.some((c: any) => c.name === 'sr_grace_deadline');
+
+    if (hasOldTier && !hasNewSlot) {
+      console.log('Migrating: sr_tier → sr_slot, adding sr_grace_deadline...');
+      exec(`ALTER TABLE cards RENAME COLUMN sr_tier TO sr_slot`);
+    }
+    if (!hasGrace && (hasOldTier || hasNewSlot)) {
+      exec(`ALTER TABLE cards ADD COLUMN sr_grace_deadline TEXT`);
+    }
+  } catch (e) {
+    // Table might not exist yet on first run
+  }
+
+  // Migration: rename review_log columns tier_before/after → slot_before/after
+  try {
+    const logCols = queryAll(`PRAGMA table_info(review_log)`);
+    const hasOldTierBefore = logCols.some((c: any) => c.name === 'tier_before');
+    const hasNewSlotBefore = logCols.some((c: any) => c.name === 'slot_before');
+
+    if (hasOldTierBefore && !hasNewSlotBefore) {
+      console.log('Migrating review_log: tier_before/after → slot_before/after...');
+      exec(`ALTER TABLE review_log RENAME COLUMN tier_before TO slot_before`);
+      exec(`ALTER TABLE review_log RENAME COLUMN tier_after TO slot_after`);
+    }
+    if (!logCols.some((c: any) => c.name === 'next_due_at')) {
+      try { exec(`ALTER TABLE review_log ADD COLUMN next_due_at TEXT`); } catch (_) {}
+    }
+    if (!logCols.some((c: any) => c.name === 'review_type')) {
+      try { exec(`ALTER TABLE review_log ADD COLUMN review_type TEXT DEFAULT 'standard'`); } catch (_) {}
+    }
+  } catch (e) {
+    // Table might not exist yet
+  }
 
   console.log('Database migrated successfully');
 }

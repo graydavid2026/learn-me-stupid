@@ -1,177 +1,214 @@
-// Spaced Repetition Engine
-// Timezone: America/Indiana/Indianapolis (Eastern, no DST shenanigans)
-// Rules:
-//   - Early practice does NOT push schedule further out
-//   - Cards must be reviewed within their tier's window or drop 1 tier
-//   - Missing 2+ consecutive windows drops additional tiers
-//   - 60 days no engagement → full reset to tier 0
+// Spaced Repetition Engine — 13-Slot System
+// Reference: docs/spaced-repetition-spec.md
+// Timezone: America/Indiana/Indianapolis
 
 const TZ = 'America/Indiana/Indianapolis';
 
-export const TIER_INTERVALS_MS: Record<number, number> = {
-  0: 0,
-  1: 4 * 60 * 60 * 1000,         // 4 hours
-  2: 24 * 60 * 60 * 1000,        // 1 day
-  3: 2 * 24 * 60 * 60 * 1000,    // 2 days
-  4: 7 * 24 * 60 * 60 * 1000,    // 1 week
-  5: 14 * 24 * 60 * 60 * 1000,   // 2 weeks
-  6: 30 * 24 * 60 * 60 * 1000,   // 1 month
-  7: 90 * 24 * 60 * 60 * 1000,   // 3 months
-  8: 180 * 24 * 60 * 60 * 1000,  // 6 months
+const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
+const WEEK = 7 * DAY;
+
+// Slot intervals in milliseconds
+export const SLOT_INTERVALS_MS: Record<number, number> = {
+  1: 5 * 60 * 1000,       // 5 minutes
+  2: 1 * HOUR,            // 1 hour
+  3: 4 * HOUR,            // 4 hours
+  4: 1 * DAY,             // 24 hours
+  5: 2 * DAY,             // 48 hours
+  6: 1 * WEEK,            // 1 week
+  7: 2 * WEEK,            // 2 weeks
+  8: 4 * WEEK,            // 4 weeks
+  9: 8 * WEEK,            // 8 weeks
+  10: 90 * DAY,           // 3 months
+  11: 180 * DAY,          // 6 months
+  12: 270 * DAY,          // 9 months
+  13: 365 * DAY,          // 1 year
 };
 
-// Grace period: how long after due date before decay kicks in
-// For each tier, you get 1x the interval as grace period
-// e.g., tier 4 (1 week interval) → 1 week grace → drops after 2 weeks overdue
-const GRACE_MULTIPLIER = 1.0;
-
-export const TIER_LABELS: Record<number, string> = {
-  0: 'New', 1: '4h', 2: '1d', 3: '2d', 4: '1w', 5: '2w', 6: '1mo', 7: '3mo', 8: '6mo',
+// Grace periods per slot in milliseconds
+export const SLOT_GRACE_MS: Record<number, number> = {
+  1: 2 * HOUR,            // 2 hours
+  2: 2 * HOUR,            // 2 hours
+  3: 2 * HOUR,            // 2 hours
+  4: 1 * DAY,             // 24 hours
+  5: 1 * DAY,             // 24 hours
+  6: 1 * DAY,             // 24 hours
+  7: 3 * DAY,             // 72 hours
+  8: 3 * DAY,             // 72 hours
+  9: 3 * DAY,             // 72 hours
+  10: 2 * WEEK,           // 2 weeks
+  11: 2 * WEEK,           // 2 weeks
+  12: 4 * WEEK,           // 4 weeks
+  13: 4 * WEEK,           // 4 weeks
 };
+
+// Tranche assignments
+export const SLOT_TRANCHE: Record<number, number> = {
+  1: 1, 2: 1, 3: 1,                     // Immediate Recall
+  4: 2, 5: 2, 6: 2,                     // Short-Term
+  7: 3, 8: 3, 9: 3,                     // Medium-Term
+  10: 4, 11: 4,                          // Long-Term
+  12: 5, 13: 5,                          // Mastery
+};
+
+export const TRANCHE_NAMES: Record<number, string> = {
+  1: 'Immediate Recall',
+  2: 'Short-Term',
+  3: 'Medium-Term',
+  4: 'Long-Term',
+  5: 'Mastery',
+};
+
+export const SLOT_LABELS: Record<number, string> = {
+  0: 'New',
+  1: '5m', 2: '1h', 3: '4h',
+  4: '1d', 5: '2d', 6: '1w',
+  7: '2w', 8: '4w', 9: '8w',
+  10: '3mo', 11: '6mo',
+  12: '9mo', 13: '1yr',
+};
+
+export const MIN_SLOT = 1;
+export const MAX_SLOT = 13;
 
 /** Get current time in Indiana */
 export function nowIndiana(): Date {
   return new Date(new Date().toLocaleString('en-US', { timeZone: TZ }));
 }
 
-/** Get ISO string for "now" in Indiana context */
-function nowISO(): string {
-  return new Date().toISOString();
-}
-
 /** Get today's date string in Indiana timezone (YYYY-MM-DD) */
 export function todayIndiana(): string {
-  return new Date().toLocaleDateString('en-CA', { timeZone: TZ }); // en-CA gives YYYY-MM-DD
+  return new Date().toLocaleDateString('en-CA', { timeZone: TZ });
 }
 
-export function calculateNextDue(tier: number): string {
-  const interval = TIER_INTERVALS_MS[Math.min(tier, 8)] ?? TIER_INTERVALS_MS[8];
+/** Calculate next due date from now + slot interval */
+export function calculateNextDue(slot: number): string {
+  const interval = SLOT_INTERVALS_MS[Math.min(Math.max(slot, MIN_SLOT), MAX_SLOT)];
   return new Date(Date.now() + interval).toISOString();
 }
 
-export function isAlreadyReviewedToday(lastReviewedAt: string | null): boolean {
-  if (!lastReviewedAt) return false;
-  const lastReviewDate = new Date(lastReviewedAt).toLocaleDateString('en-CA', { timeZone: TZ });
-  const today = todayIndiana();
-  return lastReviewDate === today;
+/** Calculate grace deadline = dueDate + grace period for the slot */
+export function calculateGraceDeadline(nextDueAt: string, slot: number): string {
+  const dueMs = new Date(nextDueAt).getTime();
+  const grace = SLOT_GRACE_MS[Math.min(Math.max(slot, MIN_SLOT), MAX_SLOT)];
+  return new Date(dueMs + grace).toISOString();
+}
+
+/** Check if a card is currently due (past due date but within or past grace) */
+export function isDue(nextDueAt: string | null): boolean {
+  if (!nextDueAt) return true; // New card, never scheduled
+  return Date.now() >= new Date(nextDueAt).getTime();
+}
+
+/** Check if a card is past its grace deadline */
+export function isPastGrace(nextDueAt: string | null, slot: number): boolean {
+  if (!nextDueAt || slot <= 0) return false;
+  const dueMs = new Date(nextDueAt).getTime();
+  const grace = SLOT_GRACE_MS[Math.min(Math.max(slot, MIN_SLOT), MAX_SLOT)];
+  return Date.now() > dueMs + grace;
 }
 
 /**
- * Calculate decayed tier based on how overdue a card is.
- * Rules:
- *   - Not overdue → no decay (even if absent for months — only due cards decay)
- *   - No due date set → no decay
- *   - Overdue by 1x grace period (1x interval) → drop 1 tier
- *   - Each additional grace period missed → drop 1 more tier
- *   - High tiers (6mo/3mo) are hard-won — cap decay at half the tier (round up)
- *     e.g., tier 8 (6mo) can only decay to tier 4 max, not to 0
- *   - Lower tiers (1-4) can decay to 0 normally
+ * Cascade regression for a card that has been neglected.
+ * Steps down one slot at a time, recalculating from each slot,
+ * until the card is within a valid grace window or hits Slot 1.
+ *
+ * Returns the new slot after all regressions.
  */
-export function calculateDecayedTier(currentTier: number, nextDueAt: string | null): number {
-  // No due date or already tier 0 → no decay
-  if (!nextDueAt || currentTier === 0) return currentTier;
+export function calculateCascadeRegression(currentSlot: number, nextDueAt: string | null): number {
+  if (!nextDueAt || currentSlot <= 0) return currentSlot;
 
+  let slot = currentSlot;
+  let dueMs = new Date(nextDueAt).getTime();
   const now = Date.now();
-  const due = new Date(nextDueAt).getTime();
 
-  // Not overdue → no decay, regardless of how long until next review
-  if (now <= due) return currentTier;
+  while (slot > MIN_SLOT) {
+    const grace = SLOT_GRACE_MS[slot] || SLOT_GRACE_MS[MIN_SLOT];
+    const graceDeadline = dueMs + grace;
 
-  const overdueMs = now - due;
+    if (now <= graceDeadline) {
+      // Within grace window for this slot — stop regressing
+      break;
+    }
 
-  // Grace period = 1x the tier's interval
-  const tierInterval = TIER_INTERVALS_MS[currentTier] || TIER_INTERVALS_MS[1];
-  const graceMs = tierInterval * GRACE_MULTIPLIER;
+    // Past grace deadline — regress one slot
+    slot--;
 
-  if (graceMs <= 0) return currentTier;
+    // Recalculate due date as if the regression happened at the grace deadline
+    // New due = graceDeadline + new slot's interval
+    const newInterval = SLOT_INTERVALS_MS[slot] || SLOT_INTERVALS_MS[MIN_SLOT];
+    dueMs = graceDeadline + newInterval;
+  }
 
-  // Each full grace period missed = 1 tier drop
-  const drops = Math.floor(overdueMs / graceMs);
-  if (drops === 0) return currentTier;
-
-  // For high tiers (6+), cap decay at halfway — these were hard-won
-  // Tier 8 (6mo) → min tier 4. Tier 7 (3mo) → min tier 4. Tier 6 (1mo) → min tier 3.
-  const minTier = currentTier >= 6
-    ? Math.ceil(currentTier / 2)
-    : 0;
-
-  return Math.max(minTier, currentTier - drops);
+  // If we're at slot 1 and still past grace, stay at slot 1 (floor rule)
+  return Math.max(slot, MIN_SLOT);
 }
 
 export interface ReviewResult {
-  newTier: number;
+  newSlot: number;
   nextDueAt: string;
-  consecutiveCorrect: number;
-  consecutiveWrong: number;
+  graceDeadline: string;
   scheduleLocked: boolean;
+  reviewType: 'standard' | 'early';
 }
 
 /**
- * Process a review.
- * Key rule: Early practice does NOT push the schedule further out.
- * If a card is reviewed before it's due, the existing due date stays.
- * Only when a card IS due (or overdue) does a correct answer advance the schedule.
+ * Process a review event.
+ *
+ * Rules from spec:
+ * - Correct within grace → advance to next slot
+ * - Correct AFTER grace expired → regress one slot, restart clock
+ * - Wrong at any time → regress one slot, restart clock
+ * - Early review (not yet due) → log but don't alter schedule
  */
 export function processReview(
   result: 'correct' | 'wrong',
-  currentTier: number,
-  consecutiveCorrect: number,
-  consecutiveWrong: number,
-  lastReviewedAt: string | null,
+  currentSlot: number,
   nextDueAt: string | null
 ): ReviewResult {
-  const alreadyReviewedToday = isAlreadyReviewedToday(lastReviewedAt);
   const now = Date.now();
-  const isDue = !nextDueAt || new Date(nextDueAt).getTime() <= now;
+  const cardIsDue = isDue(nextDueAt);
+  const isNew = currentSlot === 0; // Never been reviewed
 
-  let newTier = currentTier;
-  let newConsecutiveCorrect = consecutiveCorrect;
-  let newConsecutiveWrong = consecutiveWrong;
-
-  if (result === 'correct') {
-    newConsecutiveCorrect = consecutiveCorrect + 1;
-    newConsecutiveWrong = 0;
-    // Only promote if the card is actually due (not early practice)
-    if (isDue) {
-      newTier = Math.min(currentTier + 1, 8);
-    }
-  } else {
-    // Wrong answer
-    newConsecutiveWrong = consecutiveWrong + 1;
-    newConsecutiveCorrect = 0;
-
-    if (consecutiveWrong >= 1) {
-      // Second consecutive wrong → demote
-      newTier = Math.max(currentTier - 1, 0);
-      newConsecutiveWrong = 0;
-    }
+  // Early review — card not yet due
+  if (!isNew && !cardIsDue) {
+    return {
+      newSlot: currentSlot,
+      nextDueAt: nextDueAt!,
+      graceDeadline: calculateGraceDeadline(nextDueAt!, currentSlot),
+      scheduleLocked: true,
+      reviewType: 'early',
+    };
   }
 
-  // Schedule logic:
-  // - If already reviewed today → lock schedule (daily touch rule)
-  // - If early practice (not due) → keep existing schedule, don't push out
-  // - If due/overdue and correct → set new schedule from new tier
-  // - If due/overdue and wrong → set new schedule from current/demoted tier
-  let newNextDueAt: string;
-  let scheduleLocked = false;
+  let newSlot: number;
 
-  if (alreadyReviewedToday) {
-    scheduleLocked = true;
-    newNextDueAt = nextDueAt || calculateNextDue(newTier);
-  } else if (!isDue && result === 'correct') {
-    // Early practice — keep existing schedule, don't push out
-    scheduleLocked = true;
-    newNextDueAt = nextDueAt || calculateNextDue(newTier);
+  if (isNew) {
+    // First ever review — start at slot 1 regardless of result
+    newSlot = result === 'correct' ? MIN_SLOT : MIN_SLOT;
+  } else if (result === 'correct') {
+    // Check if within grace period
+    const pastGrace = isPastGrace(nextDueAt, currentSlot);
+    if (pastGrace) {
+      // Correct but too late — regress one slot
+      newSlot = Math.max(currentSlot - 1, MIN_SLOT);
+    } else {
+      // Correct within grace — advance
+      newSlot = Math.min(currentSlot + 1, MAX_SLOT);
+    }
   } else {
-    // Card is due/overdue — set new schedule
-    newNextDueAt = calculateNextDue(newTier);
+    // Wrong — regress one slot
+    newSlot = Math.max(currentSlot - 1, MIN_SLOT);
   }
+
+  const newNextDueAt = calculateNextDue(newSlot);
+  const newGraceDeadline = calculateGraceDeadline(newNextDueAt, newSlot);
 
   return {
-    newTier,
+    newSlot,
     nextDueAt: newNextDueAt,
-    consecutiveCorrect: newConsecutiveCorrect,
-    consecutiveWrong: newConsecutiveWrong,
-    scheduleLocked,
+    graceDeadline: newGraceDeadline,
+    scheduleLocked: false,
+    reviewType: 'standard',
   };
 }

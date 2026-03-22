@@ -10,10 +10,11 @@ import {
 } from 'recharts';
 import { useStore } from '../../stores/useStore';
 import { InfoTooltip } from '../ui/InfoTooltip';
-import { TIER_COLORS, HEAT_COLORS, getAccuracyHeat, getStreakHeat, fmt } from '../../utils/formatters';
+import { SLOT_COLORS, HEAT_COLORS, getAccuracyHeat, getStreakHeat, fmt } from '../../utils/formatters';
 
-const TIER_LABELS: Record<number, string> = {
-  0: 'New', 1: '4h', 2: '1d', 3: '2d', 4: '1w', 5: '2w', 6: '1mo', 7: '3mo', 8: '6mo',
+const SLOT_LABELS: Record<number, string> = {
+  0: 'New', 1: '5m', 2: '1h', 3: '4h', 4: '1d', 5: '2d', 6: '1w',
+  7: '2w', 8: '4w', 9: '8w', 10: '3mo', 11: '6mo', 12: '9mo', 13: '1yr',
 };
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -26,7 +27,7 @@ interface TopicForecast {
   due_now: number;
   mastered: number;
   new_cards: number;
-  avg_tier: number;
+  avg_slot: number;
   overdue: number;
 }
 
@@ -62,7 +63,7 @@ interface Stats {
   reviewsToday: number;
   correctToday: number;
   streak: number;
-  tierDistribution: { tier: number; count: number }[];
+  slotDistribution: { slot: number; count: number }[];
 }
 
 // ─── Stat Card ───────────────────────────────────────────────────────────────
@@ -91,7 +92,7 @@ function StatCard({ icon: Icon, label, value, color, tooltip, onClick, urgent }:
 
 function TopicCard({ topic, onClick }: { topic: TopicForecast; onClick: () => void }) {
   const masteryPct = topic.total_cards > 0 ? Math.round((topic.mastered / topic.total_cards) * 100) : 0;
-  const avgTier = Math.round((topic.avg_tier || 0) * 10) / 10;
+  const avgSlot = Math.round((topic.avg_slot || 0) * 10) / 10;
 
   return (
     <button
@@ -309,10 +310,10 @@ export function DashboardView() {
   const totalDueAllTopics = forecast.topics.reduce((sum, t) => sum + t.due_now, 0);
   const totalOverdue = forecast.topics.reduce((sum, t) => sum + t.overdue, 0);
 
-  // Tier distribution for charts
-  const tierData = Array.from({ length: 9 }, (_, i) => {
-    const found = stats.tierDistribution.find((t) => t.tier === i);
-    return { tier: i, label: TIER_LABELS[i], count: found?.count || 0, color: TIER_COLORS[i] };
+  // Slot distribution for charts
+  const slotData = Array.from({ length: 14 }, (_, i) => {
+    const found = stats.slotDistribution.find((s) => s.slot === i);
+    return { slot: i, label: SLOT_LABELS[i], count: found?.count || 0, color: SLOT_COLORS[i] };
   });
 
   const goStudy = () => navigate('/study');
@@ -382,11 +383,11 @@ export function DashboardView() {
             <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Tier Distribution</h3>
           </div>
           <ResponsiveContainer width="100%" height={100}>
-            <BarChart data={tierData} barSize={20}>
+            <BarChart data={slotData} barSize={20}>
               <XAxis dataKey="label" tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={false} tickLine={false} />
               <Tooltip content={<CustomTooltip />} />
               <Bar dataKey="count" radius={[3, 3, 0, 0]}>
-                {tierData.map((entry, i) => (
+                {slotData.map((entry, i) => (
                   <Cell key={i} fill={entry.color} />
                 ))}
               </Bar>
@@ -491,12 +492,12 @@ export function DashboardView() {
                     <div key={card.id} className="flex items-center gap-2 py-1.5 border-b border-border/30 last:border-0">
                       <div
                         className="w-2 h-2 rounded-full shrink-0"
-                        style={{ backgroundColor: TIER_COLORS[card.sr_tier] }}
+                        style={{ backgroundColor: SLOT_COLORS[card.sr_slot] }}
                       />
                       <span className="text-xs text-gray-300 truncate flex-1">
                         {card.preview?.slice(0, 50) || `Card (${card.set_name})`}
                       </span>
-                      <span className="text-[10px] text-gray-500 font-mono shrink-0">{TIER_LABELS[card.sr_tier]}</span>
+                      <span className="text-[10px] text-gray-500 font-mono shrink-0">{SLOT_LABELS[card.sr_slot]}</span>
                       <span className={`text-[10px] font-mono shrink-0 ${isDue ? 'text-amber-400' : 'text-gray-600'}`}>
                         {dueLabel}
                       </span>

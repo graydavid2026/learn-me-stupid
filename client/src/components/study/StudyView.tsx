@@ -3,26 +3,29 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { GraduationCap, RotateCcw, Check, X, ChevronRight, Play, Filter, Zap, Clock, Target } from 'lucide-react';
 import { useStore, CardFull, MediaBlock } from '../../stores/useStore';
 
-const TIER_COLORS: Record<number, string> = {
-  0: '#ef4444', 1: '#f97316', 2: '#f59e0b', 3: '#eab308',
-  4: '#84cc16', 5: '#22c55e', 6: '#14b8a6', 7: '#06b6d4', 8: '#22c55e',
+const SLOT_COLORS: Record<number, string> = {
+  0: '#6b7280', 1: '#ef4444', 2: '#f97316', 3: '#f59e0b',
+  4: '#eab308', 5: '#a3e635', 6: '#84cc16', 7: '#22c55e',
+  8: '#10b981', 9: '#14b8a6', 10: '#06b6d4', 11: '#3b82f6',
+  12: '#8b5cf6', 13: '#a855f7',
 };
 
-const TIER_LABELS: Record<number, string> = {
-  0: 'New', 1: '4h', 2: '1d', 3: '2d', 4: '1w', 5: '2w', 6: '1mo', 7: '3mo', 8: '6mo',
+const SLOT_LABELS: Record<number, string> = {
+  0: 'New', 1: '5m', 2: '1h', 3: '4h', 4: '1d', 5: '2d', 6: '1w',
+  7: '2w', 8: '4w', 9: '8w', 10: '3mo', 11: '6mo', 12: '9mo', 13: '1yr',
 };
 
-function TierDots({ tier }: { tier: number }) {
+function SlotDots({ slot }: { slot: number }) {
   return (
-    <div className="flex gap-1 items-center">
-      {Array.from({ length: 9 }, (_, i) => (
+    <div className="flex gap-0.5 items-center">
+      {Array.from({ length: 13 }, (_, i) => (
         <div
           key={i}
-          className="w-2 h-2 rounded-full transition-colors"
-          style={{ backgroundColor: i <= tier ? TIER_COLORS[tier] : '#2e3348' }}
+          className="w-1.5 h-1.5 rounded-full transition-colors"
+          style={{ backgroundColor: i < slot ? SLOT_COLORS[slot] : '#2e3348' }}
         />
       ))}
-      <span className="text-xs text-gray-500 ml-1 font-mono">{TIER_LABELS[tier]}</span>
+      <span className="text-xs text-gray-500 ml-1 font-mono">{SLOT_LABELS[slot]} ({slot}/13)</span>
     </div>
   );
 }
@@ -72,7 +75,7 @@ interface SessionStats {
   reviewed: number;
   correct: number;
   wrong: number;
-  tierChanges: { cardId: string; from: number; to: number }[];
+  slotChanges: { cardId: string; from: number; to: number }[];
 }
 
 export function StudyView() {
@@ -87,7 +90,7 @@ export function StudyView() {
   const [loading, setLoading] = useState(false);
   const [sessionActive, setSessionActive] = useState(false);
   const [sessionComplete, setSessionComplete] = useState(false);
-  const [stats, setStats] = useState<SessionStats>({ total: 0, reviewed: 0, correct: 0, wrong: 0, tierChanges: [] });
+  const [stats, setStats] = useState<SessionStats>({ total: 0, reviewed: 0, correct: 0, wrong: 0, slotChanges: [] });
   const [filterSetId, setFilterSetId] = useState<string>('');
   const startTime = useRef<number>(0);
 
@@ -146,7 +149,7 @@ export function StudyView() {
       setFlipped(false);
       setSessionActive(true);
       setSessionComplete(false);
-      setStats({ total: cards.length, reviewed: 0, correct: 0, wrong: 0, tierChanges: [] });
+      setStats({ total: cards.length, reviewed: 0, correct: 0, wrong: 0, slotChanges: [] });
       startTime.current = Date.now();
     } catch (err) {
       console.error('Failed to start session:', err);
@@ -175,9 +178,9 @@ export function StudyView() {
           reviewed: prev.reviewed + 1,
           correct: prev.correct + (result === 'correct' ? 1 : 0),
           wrong: prev.wrong + (result === 'wrong' ? 1 : 0),
-          tierChanges: data.tierBefore !== data.tierAfter
-            ? [...prev.tierChanges, { cardId: card.id, from: data.tierBefore, to: data.tierAfter }]
-            : prev.tierChanges,
+          slotChanges: data.slotBefore !== data.slotAfter
+            ? [...prev.slotChanges, { cardId: card.id, from: data.slotBefore, to: data.slotAfter }]
+            : prev.slotChanges,
         }));
 
         // Update card in queue with new data
@@ -242,15 +245,15 @@ export function StudyView() {
             </div>
           </div>
 
-          {stats.tierChanges.length > 0 && (
+          {stats.slotChanges.length > 0 && (
             <div className="text-left mb-6">
               <h3 className="text-sm font-semibold text-gray-400 mb-2">Tier Changes</h3>
               <div className="space-y-1">
-                {stats.tierChanges.map((tc, i) => (
+                {stats.slotChanges.map((tc, i) => (
                   <div key={i} className="flex items-center gap-2 text-sm">
-                    <span className="font-mono" style={{ color: TIER_COLORS[tc.from] }}>{TIER_LABELS[tc.from]}</span>
+                    <span className="font-mono" style={{ color: SLOT_COLORS[tc.from] }}>{SLOT_LABELS[tc.from]}</span>
                     <ChevronRight className="w-3 h-3 text-gray-500" />
-                    <span className="font-mono" style={{ color: TIER_COLORS[tc.to] }}>{TIER_LABELS[tc.to]}</span>
+                    <span className="font-mono" style={{ color: SLOT_COLORS[tc.to] }}>{SLOT_LABELS[tc.to]}</span>
                     {tc.to > tc.from ? (
                       <span className="text-green-400 text-xs">promoted</span>
                     ) : (
@@ -315,7 +318,7 @@ export function StudyView() {
         <div className="card p-4 sm:p-6 flex flex-col">
           {/* Card meta */}
           <div className="flex items-center justify-between mb-6">
-            <TierDots tier={currentCard.sr_tier} />
+            <SlotDots slot={currentCard.sr_slot} />
             <div className="flex gap-1">
               {(JSON.parse(currentCard.tags || '[]') as string[]).map((tag) => (
                 <span key={tag} className="text-xs bg-accent/10 text-accent/70 px-2 py-0.5 rounded">

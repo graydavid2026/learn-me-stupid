@@ -168,7 +168,7 @@ export function MindMapView() {
           id: cardId,
           type: 'card',
           position: { x: cardStartX + ci * cardWidth, y: 260 + (ci % 2) * 50 },
-          data: { label, tier: card.sr_tier },
+          data: { label, tier: card.sr_slot },
         });
 
         newEdges.push({
