@@ -41,6 +41,16 @@ interface CropRect {
   w: number; h: number;
 }
 
+/** Distance from point (px,py) to line segment (x1,y1)-(x2,y2) */
+function pointToSegmentDist(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
+  const dx = x2 - x1, dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(px - x1, py - y1);
+  let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+
 const COLORS = ['#ef4444', '#facc15', '#ffffff', '#000000']; // red, yellow, white, black
 const COLOR_LABELS: Record<string, string> = { '#ef4444': 'Red', '#facc15': 'Yellow', '#ffffff': 'White', '#000000': 'Black' };
 
@@ -183,9 +193,10 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
       ctx.lineTo(x2, y2);
       ctx.stroke();
 
-      // Arrowhead
+      // Arrowhead — scales with arrow length
+      const arrowLen = Math.hypot(x2 - x1, y2 - y1);
       const angle = Math.atan2(y2 - y1, x2 - x1);
-      const headLen = 18;
+      const headLen = Math.min(Math.max(arrowLen * 0.25, 12), 30);
       ctx.fillStyle = arrow.color;
       ctx.beginPath();
       ctx.moveTo(x2, y2);
@@ -243,13 +254,22 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
 
     // Check hits on existing annotations (move mode or no tool)
     if (tool === 'move' || tool === null) {
-      // Check arrow handles
+      // Check arrow endpoint handles first (for resizing)
       for (const arrow of arrows) {
         if (Math.hypot(x - arrow.x1, y - arrow.y1) < hitRadius) {
           setDragId(arrow.id); setDragType('arrow-start'); setDrawing(true); return;
         }
         if (Math.hypot(x - arrow.x2, y - arrow.y2) < hitRadius) {
           setDragId(arrow.id); setDragType('arrow-end'); setDrawing(true); return;
+        }
+      }
+      // Check arrow body (drag whole arrow) — distance from point to line segment
+      for (const arrow of arrows) {
+        const dist = pointToSegmentDist(x, y, arrow.x1, arrow.y1, arrow.x2, arrow.y2);
+        if (dist < hitRadius) {
+          const midX = (arrow.x1 + arrow.x2) / 2;
+          const midY = (arrow.y1 + arrow.y2) / 2;
+          setDragId(arrow.id); setDragType('arrow-body'); setDragOffset({ x: x - midX, y: y - midY }); setDrawing(true); return;
         }
       }
       // Check text boxes
@@ -274,11 +294,12 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
       setDrawStart({ x, y });
       setDrawing(true);
     } else if (tool === 'text') {
-      // Place a text box, then show input
+      // Place a text box, then show input — auto-switch to move after commit
       const tb: TextBox = { id: crypto.randomUUID(), x, y, text: '', color };
       setTextBoxes((prev) => [...prev, tb]);
       setEditingTextId(tb.id);
       setTextInput('');
+      // Tool switches to move in commitTextEdit
     } else if (tool === 'rect') {
       setDrawStart({ x, y });
       setDrawing(true);
@@ -297,6 +318,16 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
         setArrows((prev) => prev.map((a) => a.id === dragId ? { ...a, x1: x, y1: y } : a));
       } else if (dragType === 'arrow-end') {
         setArrows((prev) => prev.map((a) => a.id === dragId ? { ...a, x2: x, y2: y } : a));
+      } else if (dragType === 'arrow-body') {
+        // Move whole arrow — calculate delta from midpoint
+        setArrows((prev) => prev.map((a) => {
+          if (a.id !== dragId) return a;
+          const midX = (a.x1 + a.x2) / 2;
+          const midY = (a.y1 + a.y2) / 2;
+          const dx = (x - dragOffset.x) - midX;
+          const dy = (y - dragOffset.y) - midY;
+          return { ...a, x1: a.x1 + dx, y1: a.y1 + dy, x2: a.x2 + dx, y2: a.y2 + dy };
+        }));
       } else if (dragType === 'text') {
         setTextBoxes((prev) => prev.map((t) => t.id === dragId ? { ...t, x: x - dragOffset.x, y: y - dragOffset.y } : t));
       } else if (dragType === 'rect') {
@@ -324,6 +355,7 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
         setArrows((prev) => [...prev, { id: crypto.randomUUID(), x1: drawStart.x, y1: drawStart.y, x2: x, y2: y, color }]);
       }
       setDrawStart(null);
+      setTool('move'); // auto-switch to move after drawing
     } else if (tool === 'rect' && drawStart) {
       const w = Math.abs(x - drawStart.x);
       const h = Math.abs(y - drawStart.y);
@@ -331,6 +363,7 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
         setRects((prev) => [...prev, { id: crypto.randomUUID(), x: Math.min(drawStart.x, x), y: Math.min(drawStart.y, y), w, h, color }]);
       }
       setDrawStart(null);
+      setTool('move'); // auto-switch to move after drawing
     } else if (tool === 'crop' && drawStart) {
       setDrawStart(null);
     }
@@ -377,11 +410,11 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
       if (textInput.trim()) {
         setTextBoxes((prev) => prev.map((t) => t.id === editingTextId ? { ...t, text: textInput.slice(0, 80) } : t));
       } else {
-        // Remove empty text boxes
         setTextBoxes((prev) => prev.filter((t) => t.id !== editingTextId));
       }
       setEditingTextId(null);
       setTextInput('');
+      setTool('move'); // auto-switch to move after text
     }
   };
 
@@ -414,8 +447,9 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
       ctx.lineTo(arrow.x2, arrow.y2);
       ctx.stroke();
 
+      const expArrowLen = Math.hypot(arrow.x2 - arrow.x1, arrow.y2 - arrow.y1);
       const angle = Math.atan2(arrow.y2 - arrow.y1, arrow.x2 - arrow.x1);
-      const headLen = 18 / imgSize.scale;
+      const headLen = Math.min(Math.max(expArrowLen * 0.25, 12 / imgSize.scale), 30 / imgSize.scale);
       ctx.fillStyle = arrow.color;
       ctx.beginPath();
       ctx.moveTo(arrow.x2, arrow.y2);
