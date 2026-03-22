@@ -440,7 +440,7 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
 
     exportCanvas.toBlob((blob) => {
       if (blob) onSave(blob);
-    }, 'image/png');
+    }, 'image/jpeg', 0.85);
   };
 
   return (

@@ -33,6 +33,42 @@ function newBlock(type: BlockType): EditableBlock {
   };
 }
 
+/** Compress image: resize to max dimension, output as JPEG at quality 0.75 */
+async function compressImage(file: File, maxDim = 1200, quality = 0.75): Promise<File> {
+  // Skip if already small or not an image
+  if (!file.type.startsWith('image/') || file.size < 100 * 1024) return file;
+
+  return new Promise((resolve) => {
+    const img = new window.Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        const ratio = Math.min(maxDim / width, maxDim / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob(
+        (blob) => {
+          if (blob && blob.size < file.size) {
+            resolve(new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' }));
+          } else {
+            resolve(file); // compressed is larger — keep original
+          }
+        },
+        'image/jpeg',
+        quality
+      );
+    };
+    img.onerror = () => resolve(file);
+    img.src = URL.createObjectURL(file);
+  });
+}
+
 function extractYouTubeId(url: string): string | null {
   const patterns = [
     /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
@@ -354,21 +390,24 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
   };
 
   const uploadFile = async (index: number, file: File) => {
+    // Compress images before storing/uploading
+    const processedFile = file.type.startsWith('image/') ? await compressImage(file) : file;
+
     if (!cardSideId) {
-      // New card — store file reference + blob URL for preview, will upload after card creation
-      const blobUrl = URL.createObjectURL(file);
+      // New card — store file + blob URL for immediate preview/editing
+      const blobUrl = URL.createObjectURL(processedFile);
       updateBlock(index, {
-        file_name: file.name,
-        file_size: file.size,
-        mime_type: file.type,
-        pendingFile: file,
-        file_path: `blob:${blobUrl}`,
+        file_name: processedFile.name,
+        file_size: processedFile.size,
+        mime_type: processedFile.type,
+        pendingFile: processedFile,
+        file_path: blobUrl, // raw blob URL for preview
       });
       return;
     }
 
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', processedFile);
     formData.append('cardSideId', cardSideId);
 
     try {
@@ -462,7 +501,7 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
                       <div className="p-4">
                         {block.block_type === 'image' && (
                           <div>
-                            <img src={block.file_path.startsWith('blob:') ? block.file_path.slice(5) : `/uploads/${block.file_path}`} alt="" className="max-h-40 mx-auto rounded" />
+                            <img src={block.file_path.startsWith('blob:') ? block.file_path : `/uploads/${block.file_path}`} alt="" className="max-h-40 mx-auto rounded" />
                             <button
                               onClick={() => setAnnotatingIndex(index)}
                               className="mt-2 mx-auto flex items-center gap-1.5 px-3 py-1.5 bg-accent/15 text-accent hover:bg-accent/25 rounded-md text-sm transition-colors"
@@ -473,10 +512,10 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
                           </div>
                         )}
                         {block.block_type === 'audio' && (
-                          <audio controls src={block.file_path.startsWith('blob:') ? block.file_path.slice(5) : `/uploads/${block.file_path}`} className="w-full" />
+                          <audio controls src={block.file_path.startsWith('blob:') ? block.file_path : `/uploads/${block.file_path}`} className="w-full" />
                         )}
                         {block.block_type === 'video' && (
-                          <video controls src={block.file_path.startsWith('blob:') ? block.file_path.slice(5) : `/uploads/${block.file_path}`} className="max-h-40 mx-auto rounded" playsInline />
+                          <video controls src={block.file_path.startsWith('blob:') ? block.file_path : `/uploads/${block.file_path}`} className="max-h-40 mx-auto rounded" playsInline />
                         )}
                         <p className="text-xs text-gray-500 mt-2">{block.file_name}{block.pendingFile ? ' — will upload on save' : ''}</p>
                       </div>
@@ -650,10 +689,10 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
       {/* Image Annotator */}
       {annotatingIndex !== null && blocks[annotatingIndex]?.file_path && (
         <ImageAnnotator
-          imageSrc={blocks[annotatingIndex].file_path.startsWith('blob:') ? blocks[annotatingIndex].file_path.slice(5) : `/uploads/${blocks[annotatingIndex].file_path}`}
+          imageSrc={blocks[annotatingIndex].file_path.startsWith('blob:') ? blocks[annotatingIndex].file_path : `/uploads/${blocks[annotatingIndex].file_path}`}
           onSave={async (blob) => {
             // Upload annotated image, replace original
-            const file = new File([blob], `annotated-${Date.now()}.png`, { type: 'image/png' });
+            const file = new File([blob], `annotated-${Date.now()}.jpg`, { type: 'image/jpeg' });
             await uploadFile(annotatingIndex, file);
             setAnnotatingIndex(null);
           }}
@@ -790,7 +829,7 @@ export function CardEditor() {
       // Clean up any blob URLs
       [...frontBlocks, ...backBlocks].forEach(b => {
         if (b.file_path?.startsWith('blob:')) {
-          URL.revokeObjectURL(b.file_path.slice(5));
+          URL.revokeObjectURL(b.file_path);
         }
       });
       setShowCardEditor(false);
