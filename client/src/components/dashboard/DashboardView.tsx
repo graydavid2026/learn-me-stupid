@@ -300,38 +300,37 @@ export function DashboardView() {
     async function load() {
       setLoading(true);
       try {
-        // Run cascade regression check before loading dashboard data
-        await fetch('/api/study/decay-check', { method: 'POST' });
+        // Fire decay check in background (don't block dashboard load)
+        fetch('/api/study/decay-check', { method: 'POST' }).catch(() => {});
 
         const params = selectedTopicId ? `?topic=${selectedTopicId}` : '';
 
-        const [statsRes, masterRes, calendarRes] = await Promise.all([
+        // Load all data in parallel
+        const fetches: Promise<Response>[] = [
           fetch(`/api/study/stats${params}`),
           fetch('/api/study/master-dashboard'),
-          fetch('/api/study/calendar?days=60'),
-        ]);
-
-        setStats(await statsRes.json());
-        const masterData = await masterRes.json();
-        // Map master-dashboard response to forecast shape
-        setForecast({
-          topics: masterData.topics,
-          weekForecast: [], // Will load separately if needed
-        });
-        setCalendar(await calendarRes.json());
-
-        // Load week forecast
-        const forecastRes = await fetch('/api/study/forecast');
-        const fData = await forecastRes.json();
-        setForecast(prev => prev ? { ...prev, weekForecast: fData.weekForecast } : prev);
-
-        // If a topic is selected, load its detail
+          fetch('/api/study/forecast'),
+        ];
         if (selectedTopicId) {
-          const srRes = await fetch(`/api/study/topic-dashboard/${selectedTopicId}`);
-          setTopicSR(await srRes.json());
+          fetches.push(fetch(`/api/study/topic-dashboard/${selectedTopicId}`));
+        }
+
+        const results = await Promise.all(fetches);
+        const [statsData, masterData, forecastData] = await Promise.all(
+          results.slice(0, 3).map(r => r.json())
+        );
+
+        setStats(statsData);
+        setForecast({ topics: masterData.topics, weekForecast: forecastData.weekForecast });
+
+        if (selectedTopicId && results[3]) {
+          setTopicSR(await results[3].json());
         } else {
           setTopicSR(null);
         }
+
+        // Calendar loads in background (non-critical)
+        fetch('/api/study/calendar?days=60').then(r => r.json()).then(setCalendar).catch(() => {});
       } catch (err) {
         console.error('Failed to load dashboard:', err);
       } finally {
