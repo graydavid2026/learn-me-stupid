@@ -25,6 +25,7 @@ interface CardSet {
   updated_at: string;
   card_count: number;
   due_count: number;
+  due_soon_count?: number;
   new_count?: number;
 }
 

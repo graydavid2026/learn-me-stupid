@@ -193,7 +193,12 @@ export function CardsView() {
                           {set.due_count} due
                         </span>
                       )}
-                      {!set.due_count && (set.new_count || 0) > 0 && (
+                      {(set.due_soon_count || 0) > 0 && (
+                        <span className="text-xs bg-orange-500/15 text-orange-300 px-2 py-0.5 rounded-full font-mono">
+                          {set.due_soon_count} due soon
+                        </span>
+                      )}
+                      {!set.due_count && !(set.due_soon_count || 0) && (set.new_count || 0) > 0 && (
                         <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full font-mono">
                           {set.new_count} new
                         </span>
