@@ -59,10 +59,10 @@ export function ImageLightbox({ src, alt, onClose }: ImageLightboxProps) {
       <div className="flex items-center justify-between px-4 py-3 bg-black/50" onClick={e => e.stopPropagation()}>
         <span className="text-gray-400 text-sm">{Math.round(scale * 100)}%</span>
         <div className="flex gap-2">
-          <button onClick={() => setScale(s => Math.min(s + 0.25, 5))} className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white"><ZoomIn className="w-4 h-4" /></button>
-          <button onClick={() => setScale(s => Math.max(s - 0.25, 0.5))} className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white"><ZoomOut className="w-4 h-4" /></button>
-          <button onClick={reset} className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white"><RotateCcw className="w-4 h-4" /></button>
-          <button onClick={onClose} className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white"><X className="w-4 h-4" /></button>
+          <button onClick={() => setScale(s => Math.min(s + 0.25, 5))} className="p-3 rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/30 text-white min-w-[44px] min-h-[44px] flex items-center justify-center" aria-label="Zoom in"><ZoomIn className="w-5 h-5" /></button>
+          <button onClick={() => setScale(s => Math.max(s - 0.25, 0.5))} className="p-3 rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/30 text-white min-w-[44px] min-h-[44px] flex items-center justify-center" aria-label="Zoom out"><ZoomOut className="w-5 h-5" /></button>
+          <button onClick={reset} className="p-3 rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/30 text-white min-w-[44px] min-h-[44px] flex items-center justify-center" aria-label="Reset zoom"><RotateCcw className="w-5 h-5" /></button>
+          <button onClick={onClose} className="p-3 rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/30 text-white min-w-[44px] min-h-[44px] flex items-center justify-center" aria-label="Close"><X className="w-5 h-5" /></button>
         </div>
       </div>
 
@@ -148,14 +148,14 @@ export function HotspotImage({ imageSrc, spots, title }: HotspotImageProps) {
           {spots.map((spot, idx) => (
             <button
               key={idx}
-              className={`absolute w-7 h-7 -ml-3.5 -mt-3.5 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all z-10 ${
+              className={`absolute w-9 h-9 -ml-[18px] -mt-[18px] rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all z-10 ${
                 activeSpot === idx
                   ? 'bg-accent border-accent text-white scale-125 ring-2 ring-accent/40'
-                  : 'bg-purple-600/80 border-purple-400 text-white hover:scale-110 hover:bg-purple-500'
+                  : 'bg-purple-600/80 border-purple-400 text-white hover:scale-110 active:scale-95 hover:bg-purple-500'
               }`}
               style={{ left: `${spot.x}%`, top: `${spot.y}%` }}
               onClick={(e) => handleSpotClick(idx, e)}
-              title={spot.label}
+              aria-label={`Hotspot ${idx + 1}: ${spot.label}`}
             >
               {idx + 1}
             </button>

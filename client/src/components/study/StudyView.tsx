@@ -26,7 +26,7 @@ function SlotDots({ slot }: { slot: number }) {
           style={{ backgroundColor: i < slot ? SLOT_COLORS[slot] : '#2e3348' }}
         />
       ))}
-      <span className="text-xs text-gray-500 ml-1 font-mono">{SLOT_LABELS[slot]} ({slot}/13)</span>
+      <span className="text-xs text-gray-400 ml-1 font-mono">{SLOT_LABELS[slot]} ({slot}/13)</span>
     </div>
   );
 }
@@ -59,14 +59,14 @@ function SpeakButton({ text, lang = 'ru-RU' }: { text: string; lang?: string }) 
   return (
     <button
       onClick={handleClick}
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+      className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all min-h-[44px] ${
         speaking
           ? 'bg-accent/30 text-accent border border-accent/40 scale-105'
-          : 'bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-600/30'
+          : 'bg-purple-600/20 hover:bg-purple-600/30 active:bg-purple-600/40 text-purple-300 border border-purple-600/30'
       }`}
-      title="Listen to pronunciation"
+      aria-label={speaking ? 'Playing pronunciation' : 'Listen to pronunciation'}
     >
-      <Volume2 className={`w-4 h-4 ${speaking ? 'animate-pulse' : ''}`} />
+      <Volume2 className={`w-5 h-5 ${speaking ? 'animate-pulse' : ''}`} />
       {speaking ? 'Playing...' : 'Listen'}
     </button>
   );
@@ -77,15 +77,26 @@ function hasCyrillic(text: string): boolean {
   return /[а-яА-ЯёЁ]/.test(text);
 }
 
+// Render markdown-style bold (**text**) as <strong> elements
+function renderMarkdownBold(text: string): (string | JSX.Element)[] {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={i} className="text-white font-semibold">{part.slice(2, -2)}</strong>;
+    }
+    return part;
+  });
+}
+
 function ZoomableImage({ src, alt }: { src: string; alt: string }) {
   const [showLightbox, setShowLightbox] = useState(false);
   return (
     <>
-      <div className="relative group cursor-pointer" onClick={(e) => { e.stopPropagation(); setShowLightbox(true); }}>
+      <div className="relative cursor-pointer" onClick={(e) => { e.stopPropagation(); setShowLightbox(true); }}>
         <img src={src} alt={alt} className="max-h-[40vh] sm:max-h-[50vh] w-auto max-w-full rounded-lg mx-auto object-contain" />
-        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 rounded-lg px-2 py-1 flex items-center gap-1 pointer-events-none">
-          <Maximize2 className="w-3 h-3 text-white" />
-          <span className="text-[10px] text-white">Zoom</span>
+        <div className="absolute top-2 right-2 bg-black/50 rounded-lg px-2 py-1 flex items-center gap-1 pointer-events-none">
+          <Maximize2 className="w-3.5 h-3.5 text-white/70" />
+          <span className="text-[11px] text-white/70">Tap to zoom</span>
         </div>
       </div>
       {showLightbox && <ImageLightbox src={src} alt={alt} onClose={() => setShowLightbox(false)} />}
@@ -106,13 +117,14 @@ function MediaBlockRenderer({ block, hasImage }: { block: MediaBlock; hasImage?:
       const maxChars = hasImage ? 200 : 600;
       const display = text.length > maxChars ? text.slice(0, maxChars) + '…' : text;
       const showSpeak = hasCyrillic(text);
+      const hasMarkdown = display.includes('**');
       return (
         <div>
           <div className={`${textClass} text-gray-100 whitespace-pre-wrap`}>
-            {display}
+            {hasMarkdown ? renderMarkdownBold(display) : display}
           </div>
           {showSpeak && (
-            <div className="mt-2 flex justify-center">
+            <div className="mt-3 flex justify-center">
               <SpeakButton text={text} lang="ru-RU" />
             </div>
           )}
@@ -504,7 +516,7 @@ export function StudyView() {
               </div>
 
               <div className="text-center mt-2">
-                <span className="text-[10px] text-gray-600">tap to flip</span>
+                <span className="text-xs text-gray-400">tap to flip</span>
               </div>
             </div>
 
