@@ -132,7 +132,7 @@ function MediaBlockRenderer({ block, hasImage }: { block: MediaBlock; hasImage?:
   }
 }
 
-type StudyMode = 'due' | 'pipeline' | 'focus' | 'all';
+type StudyMode = 'review' | 'new' | 'mixed' | 'pipeline' | 'focus';
 
 interface SessionStats {
   total: number;
@@ -150,7 +150,7 @@ export function StudyView() {
   const urlSetId = searchParams.get('set');
 
   // Session state
-  const [mode, setMode] = useState<StudyMode>(urlSetId ? 'focus' : 'due');
+  const [mode, setMode] = useState<StudyMode>(urlSetId ? 'focus' : 'review');
   const [queue, setQueue] = useState<CardFull[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
@@ -199,26 +199,32 @@ export function StudyView() {
     setLoading(true);
     await runDecayCheck();
 
-    let url = '/api/study/due?';
-    if (mode === 'pipeline') url = '/api/study/pipeline?limit=20&';
-
     const params = new URLSearchParams();
     if (selectedTopicId) params.set('topic', selectedTopicId);
     if (filterSetId) params.set('set', filterSetId);
 
+    let url: string;
+    if (mode === 'pipeline') {
+      url = '/api/study/pipeline?limit=20&';
+    } else if (mode === 'review') {
+      params.set('mode', 'review');
+      url = '/api/study/due?';
+    } else if (mode === 'new') {
+      params.set('mode', 'new');
+      params.set('limit', '15');
+      url = '/api/study/due?';
+    } else if (mode === 'mixed') {
+      params.set('mode', 'mixed');
+      params.set('limit', '10');
+      url = '/api/study/due?';
+    } else {
+      // focus mode — use legacy (all due for the set)
+      url = '/api/study/due?';
+    }
+
     try {
       const res = await fetch(url + params.toString());
       const cards: CardFull[] = await res.json();
-
-      if (mode === 'all' && selectedTopicId) {
-        // Fetch both due and pipeline
-        const res2 = await fetch('/api/study/pipeline?' + params.toString() + '&limit=50');
-        const pipeline: CardFull[] = await res2.json();
-        const allIds = new Set(cards.map(c => c.id));
-        for (const c of pipeline) {
-          if (!allIds.has(c.id)) cards.push(c);
-        }
-      }
 
       setQueue(cards);
       setCurrentIndex(0);
@@ -549,10 +555,11 @@ export function StudyView() {
       {/* Mode Selection */}
       <div className="grid grid-cols-2 gap-3 mb-6">
         {[
-          { id: 'due' as StudyMode, label: 'Review Due', desc: 'Cards ready for review', icon: Clock },
-          { id: 'pipeline' as StudyMode, label: 'Ahead of Schedule', desc: 'Study upcoming cards early', icon: Zap },
+          { id: 'review' as StudyMode, label: 'Review Due', desc: 'Cards you\'ve studied that need review', icon: Clock },
+          { id: 'new' as StudyMode, label: 'Learn New', desc: 'Introduce 15 new cards', icon: GraduationCap },
+          { id: 'mixed' as StudyMode, label: 'Mixed Session', desc: 'Review due + 10 new cards', icon: Zap },
           { id: 'focus' as StudyMode, label: 'Focus Set', desc: 'Study a specific card set', icon: Target },
-          { id: 'all' as StudyMode, label: 'All Cards', desc: 'Due + upcoming combined', icon: Play },
+          { id: 'pipeline' as StudyMode, label: 'Ahead of Schedule', desc: 'Study upcoming cards early', icon: Play },
         ].map(({ id, label, desc, icon: Icon }) => (
           <button
             key={id}
@@ -571,7 +578,7 @@ export function StudyView() {
       </div>
 
       {/* Filter by set (for focus mode) */}
-      {(mode === 'focus' || mode === 'all') && selectedTopicId && cardSets.length > 0 && (
+      {mode === 'focus' && selectedTopicId && cardSets.length > 0 && (
         <div className="mb-6">
           <label className="text-sm text-gray-400 mb-2 block">Card Set</label>
           <select

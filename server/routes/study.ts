@@ -47,18 +47,33 @@ function getFullCard(cardId: string) {
   };
 }
 
-// GET /api/study/due — Get all due cards (with filters)
+// GET /api/study/due — Get due cards (with filters)
+// ?mode=review  — only cards with slot > 0 that are past due (previously studied)
+// ?mode=new     — only slot 0 cards (never studied), limited batch
+// ?mode=mixed   — review-due first, then new cards up to limit (default)
+// (no mode)     — legacy: all due cards (review + new)
 router.get('/due', (req, res) => {
   try {
-    const { topic, set, tags, slotMin, slotMax } = req.query;
+    const { topic, set, tags, slotMin, slotMax, mode, limit } = req.query;
+    const newCardLimit = Number(limit) || 10;
 
     let sql = `
       SELECT c.* FROM cards c
       JOIN card_sets cs ON cs.id = c.card_set_id
       WHERE c.sr_is_active = 1
-        AND (c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime('now'))
     `;
     const params: any[] = [];
+
+    if (mode === 'review') {
+      // Only cards that have been studied before and are now due again
+      sql += ' AND c.sr_slot > 0 AND c.sr_next_due_at IS NOT NULL AND c.sr_next_due_at <= datetime(\'now\')';
+    } else if (mode === 'new') {
+      // Only never-studied cards
+      sql += ' AND c.sr_slot = 0';
+    } else {
+      // Legacy/mixed: all due (review + new)
+      sql += ' AND (c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime(\'now\'))';
+    }
 
     if (topic) {
       sql += ' AND cs.topic_id = ?';
@@ -77,7 +92,12 @@ router.get('/due', (req, res) => {
       params.push(Number(slotMax));
     }
 
-    sql += ' ORDER BY c.sr_slot ASC, c.sr_next_due_at ASC';
+    if (mode === 'new') {
+      sql += ' ORDER BY c.created_at ASC LIMIT ?';
+      params.push(newCardLimit);
+    } else {
+      sql += ' ORDER BY c.sr_slot ASC, c.sr_next_due_at ASC';
+    }
 
     const cards = queryAll(sql, params);
     let fullCards = cards.map((c: any) => getFullCard(c.id)).filter(Boolean);
@@ -88,6 +108,13 @@ router.get('/due', (req, res) => {
         const cardTags: string[] = JSON.parse(c.tags || '[]').map((t: string) => t.toLowerCase());
         return tagList.some((t) => cardTags.includes(t));
       });
+    }
+
+    // For mixed mode: put review cards first, then cap new cards
+    if (mode === 'mixed') {
+      const reviewCards = fullCards.filter((c: any) => c.sr_slot > 0);
+      const newCards = fullCards.filter((c: any) => c.sr_slot === 0).slice(0, newCardLimit);
+      fullCards = [...reviewCards, ...newCards];
     }
 
     res.json(fullCards);
