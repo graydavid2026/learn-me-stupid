@@ -29,7 +29,7 @@ interface CardSet {
 export interface MediaBlock {
   id: string;
   card_side_id: string;
-  block_type: 'text' | 'image' | 'audio' | 'video' | 'youtube';
+  block_type: 'text' | 'image' | 'audio' | 'video' | 'youtube' | 'hotspot';
   sort_order: number;
   text_content: string | null;
   file_path: string | null;

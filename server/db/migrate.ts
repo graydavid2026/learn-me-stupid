@@ -53,7 +53,7 @@ export async function migrate(): Promise<void> {
     CREATE TABLE IF NOT EXISTS media_blocks (
       id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
       card_side_id TEXT NOT NULL REFERENCES card_sides(id) ON DELETE CASCADE,
-      block_type TEXT NOT NULL CHECK (block_type IN ('text', 'image', 'audio', 'video', 'youtube')),
+      block_type TEXT NOT NULL CHECK (block_type IN ('text', 'image', 'audio', 'video', 'youtube', 'hotspot')),
       sort_order INTEGER DEFAULT 0,
       text_content TEXT,
       file_path TEXT,

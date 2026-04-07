@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { GraduationCap, RotateCcw, Check, X, ChevronRight, Play, Filter, Zap, Clock, Target, ArrowLeft, Volume2 } from 'lucide-react';
+import { GraduationCap, RotateCcw, Check, X, ChevronRight, Play, Filter, Zap, Clock, Target, ArrowLeft, Volume2, Maximize2 } from 'lucide-react';
 import { useStore, CardFull, MediaBlock } from '../../stores/useStore';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { ImageLightbox, HotspotImage, parseHotspotData } from './ImageViewer';
 
 const SLOT_COLORS: Record<number, string> = {
   0: '#6b7280', 1: '#ef4444', 2: '#f97316', 3: '#f59e0b',
@@ -76,6 +77,22 @@ function hasCyrillic(text: string): boolean {
   return /[а-яА-ЯёЁ]/.test(text);
 }
 
+function ZoomableImage({ src, alt }: { src: string; alt: string }) {
+  const [showLightbox, setShowLightbox] = useState(false);
+  return (
+    <>
+      <div className="relative group cursor-pointer" onClick={(e) => { e.stopPropagation(); setShowLightbox(true); }}>
+        <img src={src} alt={alt} className="max-h-[40vh] sm:max-h-[50vh] w-auto max-w-full rounded-lg mx-auto object-contain" />
+        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 rounded-lg px-2 py-1 flex items-center gap-1 pointer-events-none">
+          <Maximize2 className="w-3 h-3 text-white" />
+          <span className="text-[10px] text-white">Zoom</span>
+        </div>
+      </div>
+      {showLightbox && <ImageLightbox src={src} alt={alt} onClose={() => setShowLightbox(false)} />}
+    </>
+  );
+}
+
 function MediaBlockRenderer({ block, hasImage }: { block: MediaBlock; hasImage?: boolean }) {
   switch (block.block_type) {
     case 'text': {
@@ -104,8 +121,14 @@ function MediaBlockRenderer({ block, hasImage }: { block: MediaBlock; hasImage?:
     }
     case 'image':
       return block.file_path ? (
-        <img src={`/uploads/${block.file_path}`} alt={block.file_name || ''} className="max-h-[40vh] sm:max-h-[50vh] w-auto max-w-full rounded-lg mx-auto object-contain" />
+        <ZoomableImage src={`/uploads/${block.file_path}`} alt={block.file_name || ''} />
       ) : null;
+    case 'hotspot': {
+      const hotspotData = block.text_content ? parseHotspotData(block.text_content) : null;
+      return hotspotData ? (
+        <HotspotImage imageSrc={hotspotData.image} spots={hotspotData.spots} title={hotspotData.title} />
+      ) : null;
+    }
     case 'audio':
       return block.file_path ? (
         <audio controls src={`/uploads/${block.file_path}`} className="w-full mx-auto" />

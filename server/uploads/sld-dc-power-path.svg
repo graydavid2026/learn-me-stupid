@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="800" height="500">
+  <style>text { font-family: 'Segoe UI', Arial, sans-serif; }</style>
+  <rect width="800" height="500" rx="12" fill="#1a1a2e"/>
+  <text x="400" y="28" text-anchor="middle" fill="#7ec8e3" font-size="14" font-weight="bold">DATA CENTER POWER PATH — Utility to Rack</text>
+
+  <!-- Utility Feed -->
+  <rect x="30" y="50" width="120" height="50" rx="6" fill="#2a1a3e" stroke="#c77dff" stroke-width="2"/>
+  <text x="90" y="72" text-anchor="middle" fill="#e0aaff" font-size="11" font-weight="bold">Utility Feed</text>
+  <text x="90" y="88" text-anchor="middle" fill="#c77dff" font-size="9">13.8 kV</text>
+  <line x1="150" y1="75" x2="185" y2="75" stroke="#f59e0b" stroke-width="2"/>
+
+  <!-- MV Switchgear -->
+  <rect x="185" y="50" width="110" height="50" rx="6" fill="#1a3a2a" stroke="#40916c" stroke-width="2"/>
+  <text x="240" y="72" text-anchor="middle" fill="#95d5b2" font-size="10" font-weight="bold">MV Switchgear</text>
+  <text x="240" y="88" text-anchor="middle" fill="#74c69d" font-size="9">15 kV Class</text>
+  <line x1="295" y1="75" x2="330" y2="75" stroke="#f59e0b" stroke-width="2"/>
+
+  <!-- Transformer -->
+  <circle cx="350" cy="75" r="20" fill="none" stroke="#f59e0b" stroke-width="2"/>
+  <circle cx="375" cy="75" r="20" fill="none" stroke="#f59e0b" stroke-width="2"/>
+  <text x="362" y="110" text-anchor="middle" fill="#e2e8f0" font-size="9">13.8kV → 480V</text>
+  <text x="362" y="122" text-anchor="middle" fill="#94a3b8" font-size="8">Δ-Y, 2000 kVA</text>
+  <line x1="395" y1="75" x2="430" y2="75" stroke="#f59e0b" stroke-width="2"/>
+
+  <!-- LV Switchgear -->
+  <rect x="430" y="50" width="110" height="50" rx="6" fill="#1a2a3a" stroke="#4a90d9" stroke-width="2"/>
+  <text x="485" y="72" text-anchor="middle" fill="#93c5fd" font-size="10" font-weight="bold">LV Switchgear</text>
+  <text x="485" y="88" text-anchor="middle" fill="#60a5fa" font-size="9">480V Main</text>
+  <line x1="485" y1="100" x2="485" y2="140" stroke="#f59e0b" stroke-width="2"/>
+
+  <!-- ATS -->
+  <rect x="430" y="140" width="110" height="45" rx="6" fill="#2d2a1a" stroke="#d4a017" stroke-width="2"/>
+  <text x="485" y="160" text-anchor="middle" fill="#fcd34d" font-size="10" font-weight="bold">ATS</text>
+  <text x="485" y="175" text-anchor="middle" fill="#d4a017" font-size="8">Normal / Emergency</text>
+
+  <!-- Generator -->
+  <rect x="590" y="140" width="100" height="45" rx="6" fill="#3a1a1a" stroke="#ef4444" stroke-width="2"/>
+  <circle cx="640" cy="155" r="10" fill="none" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="640" y="159" text-anchor="middle" fill="#ef4444" font-size="9" font-weight="bold">G</text>
+  <text x="640" y="175" text-anchor="middle" fill="#fca5a5" font-size="8">Diesel Standby</text>
+  <line x1="590" y1="162" x2="540" y2="162" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+  <line x1="485" y1="185" x2="485" y2="215" stroke="#f59e0b" stroke-width="2"/>
+
+  <!-- UPS -->
+  <rect x="420" y="215" width="130" height="55" rx="6" fill="#1a1a3a" stroke="#818cf8" stroke-width="2"/>
+  <text x="485" y="237" text-anchor="middle" fill="#a5b4fc" font-size="11" font-weight="bold">UPS</text>
+  <text x="485" y="253" text-anchor="middle" fill="#818cf8" font-size="8">Rectifier → Battery → Inverter</text>
+  <text x="485" y="264" text-anchor="middle" fill="#6366f1" font-size="8">Li-ion, 480V</text>
+
+  <!-- Battery icon -->
+  <rect x="560" y="245" width="30" height="15" rx="2" fill="none" stroke="#818cf8" stroke-width="1.5"/>
+  <rect x="590" y="249" width="4" height="7" rx="1" fill="#818cf8"/>
+  <text x="575" y="275" text-anchor="middle" fill="#6366f1" font-size="7">BATT</text>
+
+  <line x1="485" y1="270" x2="485" y2="300" stroke="#f59e0b" stroke-width="2"/>
+
+  <!-- STS -->
+  <rect x="430" y="300" width="110" height="40" rx="6" fill="#2a2a1a" stroke="#ca8a04" stroke-width="2"/>
+  <text x="485" y="318" text-anchor="middle" fill="#fde047" font-size="10" font-weight="bold">STS</text>
+  <text x="485" y="332" text-anchor="middle" fill="#ca8a04" font-size="8">&lt; 4ms transfer</text>
+
+  <line x1="485" y1="340" x2="485" y2="365" stroke="#f59e0b" stroke-width="2"/>
+
+  <!-- PDU -->
+  <rect x="420" y="365" width="130" height="50" rx="6" fill="#1a2a2a" stroke="#0d9488" stroke-width="2"/>
+  <text x="485" y="385" text-anchor="middle" fill="#5eead4" font-size="10" font-weight="bold">PDU</text>
+  <text x="485" y="400" text-anchor="middle" fill="#0d9488" font-size="8">480V → 208/120V</text>
+  <text x="485" y="410" text-anchor="middle" fill="#0d9488" font-size="7">42-pole panelboard</text>
+
+  <!-- Branch circuits to racks -->
+  <line x1="445" y1="415" x2="445" y2="450" stroke="#0d9488" stroke-width="1.5"/>
+  <line x1="470" y1="415" x2="470" y2="450" stroke="#0d9488" stroke-width="1.5"/>
+  <line x1="495" y1="415" x2="495" y2="450" stroke="#0d9488" stroke-width="1.5"/>
+  <line x1="520" y1="415" x2="520" y2="450" stroke="#0d9488" stroke-width="1.5"/>
+
+  <!-- Racks -->
+  <rect x="433" y="450" width="24" height="25" rx="2" fill="#0f2a2a" stroke="#0d9488" stroke-width="1"/>
+  <rect x="460" y="450" width="24" height="25" rx="2" fill="#0f2a2a" stroke="#0d9488" stroke-width="1"/>
+  <rect x="487" y="450" width="24" height="25" rx="2" fill="#0f2a2a" stroke="#0d9488" stroke-width="1"/>
+  <rect x="514" y="450" width="24" height="25" rx="2" fill="#0f2a2a" stroke="#0d9488" stroke-width="1"/>
+  <text x="445" y="466" text-anchor="middle" fill="#5eead4" font-size="7">R1</text>
+  <text x="472" y="466" text-anchor="middle" fill="#5eead4" font-size="7">R2</text>
+  <text x="499" y="466" text-anchor="middle" fill="#5eead4" font-size="7">R3</text>
+  <text x="526" y="466" text-anchor="middle" fill="#5eead4" font-size="7">R4</text>
+  <text x="485" y="490" text-anchor="middle" fill="#94a3b8" font-size="9">IT Equipment Racks</text>
+
+  <!-- Voltage labels on left -->
+  <text x="15" y="78" fill="#f59e0b" font-size="8" font-weight="bold">13.8 kV</text>
+  <text x="15" y="245" fill="#818cf8" font-size="8" font-weight="bold">480V</text>
+  <text x="15" y="395" fill="#0d9488" font-size="8" font-weight="bold">208/120V</text>
+
+  <!-- Flow arrow -->
+  <line x1="8" y1="85" x2="8" y2="385" stroke="#334" stroke-width="1" stroke-dasharray="3,3"/>
+  <text x="8" y="410" fill="#556" font-size="7" text-anchor="middle">FLOW</text>
+</svg>
