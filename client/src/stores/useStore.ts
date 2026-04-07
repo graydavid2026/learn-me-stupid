@@ -12,6 +12,7 @@ interface Topic {
   updated_at: string;
   card_count: number;
   due_count: number;
+  new_count?: number;
 }
 
 interface CardSet {
@@ -24,6 +25,7 @@ interface CardSet {
   updated_at: string;
   card_count: number;
   due_count: number;
+  new_count?: number;
 }
 
 export interface MediaBlock {

@@ -193,6 +193,11 @@ export function CardsView() {
                           {set.due_count} due
                         </span>
                       )}
+                      {!set.due_count && (set.new_count || 0) > 0 && (
+                        <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full font-mono">
+                          {set.new_count} new
+                        </span>
+                      )}
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
                         onClick={(e) => e.stopPropagation()}
                       >

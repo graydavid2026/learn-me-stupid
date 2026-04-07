@@ -180,7 +180,12 @@ router.get('/stats', (req, res) => {
     );
 
     const dueToday = queryOne(
-      `SELECT COUNT(*) as count FROM cards c JOIN card_sets cs ON cs.id = c.card_set_id ${whereClause} AND (c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime('now'))`,
+      `SELECT COUNT(*) as count FROM cards c JOIN card_sets cs ON cs.id = c.card_set_id ${whereClause} AND c.sr_slot > 0 AND c.sr_next_due_at IS NOT NULL AND c.sr_next_due_at <= datetime('now')`,
+      params
+    );
+
+    const newCards = queryOne(
+      `SELECT COUNT(*) as count FROM cards c JOIN card_sets cs ON cs.id = c.card_set_id ${whereClause} AND c.sr_slot = 0`,
       params
     );
 
@@ -196,11 +201,6 @@ router.get('/stats', (req, res) => {
 
     const mastered = queryOne(
       `SELECT COUNT(*) as count FROM cards c JOIN card_sets cs ON cs.id = c.card_set_id ${whereClause} AND c.sr_slot >= 12`,
-      params
-    );
-
-    const newCards = queryOne(
-      `SELECT COUNT(*) as count FROM cards c JOIN card_sets cs ON cs.id = c.card_set_id ${whereClause} AND c.sr_slot = 0`,
       params
     );
 
@@ -295,7 +295,7 @@ router.get('/timeline', (req, res) => {
         const dueRow = queryOne(
           `SELECT COUNT(*) as count FROM cards c${topicJoin}
            WHERE c.sr_is_active = 1${topicWhere}
-             AND (c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime('now'))`,
+             AND c.sr_slot > 0 AND c.sr_next_due_at IS NOT NULL AND c.sr_next_due_at <= datetime('now')`,
           topic ? [topic] : []
         );
         const overdueRow = queryOne(
@@ -454,7 +454,7 @@ router.get('/calendar', (req, res) => {
                JOIN card_sets cs ON cs.id = c.card_set_id
                JOIN topics t ON t.id = cs.topic_id
                WHERE c.sr_is_active = 1
-                 AND (c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime('now'))
+                 AND c.sr_slot > 0 AND c.sr_next_due_at IS NOT NULL AND c.sr_next_due_at <= datetime('now')
                GROUP BY t.id`;
       } else {
         sql = `SELECT t.id as topic_id, t.name as topic_name, t.color as topic_color, COUNT(*) as count
@@ -511,7 +511,7 @@ router.get('/forecast', (_req, res) => {
     const topicSummaries = queryAll(
       `SELECT t.id, t.name, t.color,
               COUNT(c.id) as total_cards,
-              SUM(CASE WHEN c.sr_is_active = 1 AND (c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime('now')) THEN 1 ELSE 0 END) as due_now,
+              SUM(CASE WHEN c.sr_is_active = 1 AND c.sr_slot > 0 AND c.sr_next_due_at IS NOT NULL AND c.sr_next_due_at <= datetime('now') THEN 1 ELSE 0 END) as due_now,
               SUM(CASE WHEN c.sr_slot >= 12 THEN 1 ELSE 0 END) as mastered,
               SUM(CASE WHEN c.sr_slot = 0 THEN 1 ELSE 0 END) as new_cards,
               AVG(c.sr_slot) as avg_slot,
@@ -532,7 +532,7 @@ router.get('/forecast', (_req, res) => {
       let count: number;
       if (i === 0) {
         const row = queryOne(
-          `SELECT COUNT(*) as count FROM cards WHERE sr_is_active = 1 AND (sr_next_due_at IS NULL OR sr_next_due_at <= datetime('now'))`,
+          `SELECT COUNT(*) as count FROM cards WHERE sr_is_active = 1 AND sr_slot > 0 AND sr_next_due_at IS NOT NULL AND sr_next_due_at <= datetime('now')`,
           []
         );
         count = row?.count || 0;
@@ -577,7 +577,7 @@ router.get('/topic-sr/:topicId', (req, res) => {
     const sets = queryAll(
       `SELECT cs.id, cs.name,
               COUNT(c.id) as total,
-              SUM(CASE WHEN c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime('now') THEN 1 ELSE 0 END) as due,
+              SUM(CASE WHEN c.sr_slot > 0 AND c.sr_next_due_at IS NOT NULL AND c.sr_next_due_at <= datetime('now') THEN 1 ELSE 0 END) as due,
               SUM(CASE WHEN c.sr_slot >= 12 THEN 1 ELSE 0 END) as mastered,
               AVG(c.sr_slot) as avg_slot
        FROM card_sets cs
@@ -625,7 +625,7 @@ router.get('/master-dashboard', (_req, res) => {
     const topics = queryAll(
       `SELECT t.id, t.name, t.color,
               COUNT(c.id) as total_cards,
-              SUM(CASE WHEN c.sr_is_active = 1 AND (c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime('now')) THEN 1 ELSE 0 END) as due_now,
+              SUM(CASE WHEN c.sr_is_active = 1 AND c.sr_slot > 0 AND c.sr_next_due_at IS NOT NULL AND c.sr_next_due_at <= datetime('now') THEN 1 ELSE 0 END) as due_now,
               SUM(CASE WHEN c.sr_is_active = 1 AND c.sr_grace_deadline IS NOT NULL AND c.sr_grace_deadline <= datetime('now') THEN 1 ELSE 0 END) as overdue,
               SUM(CASE WHEN c.sr_slot >= 12 THEN 1 ELSE 0 END) as mastered,
               MIN(CASE WHEN c.sr_next_due_at > datetime('now') THEN c.sr_next_due_at ELSE NULL END) as next_due
@@ -652,7 +652,7 @@ router.get('/master-dashboard', (_req, res) => {
        FROM cards c
        JOIN card_sets cs ON cs.id = c.card_set_id
        WHERE c.sr_is_active = 1
-         AND (c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime('now'))
+         AND c.sr_slot > 0 AND c.sr_next_due_at IS NOT NULL AND c.sr_next_due_at <= datetime('now')
        GROUP BY cs.topic_id, tranche`,
       []
     );
@@ -690,7 +690,7 @@ router.get('/topic-dashboard/:topicId', (req, res) => {
     const sets = queryAll(
       `SELECT cs.id, cs.name,
               COUNT(c.id) as total,
-              SUM(CASE WHEN c.sr_is_active = 1 AND (c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime('now')) THEN 1 ELSE 0 END) as due,
+              SUM(CASE WHEN c.sr_is_active = 1 AND c.sr_slot > 0 AND c.sr_next_due_at IS NOT NULL AND c.sr_next_due_at <= datetime('now') THEN 1 ELSE 0 END) as due,
               SUM(CASE WHEN c.sr_is_active = 1 AND c.sr_grace_deadline IS NOT NULL AND c.sr_grace_deadline <= datetime('now') THEN 1 ELSE 0 END) as overdue,
               SUM(CASE WHEN c.sr_slot >= 12 THEN 1 ELSE 0 END) as mastered
        FROM card_sets cs
@@ -715,7 +715,7 @@ router.get('/topic-dashboard/:topicId', (req, res) => {
        JOIN card_sets cs ON cs.id = c.card_set_id
        WHERE cs.topic_id = ?
          AND c.sr_is_active = 1
-         AND (c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime('now'))
+         AND c.sr_slot > 0 AND c.sr_next_due_at IS NOT NULL AND c.sr_next_due_at <= datetime('now')
        GROUP BY c.card_set_id, tranche`,
       [topicId]
     );
@@ -723,7 +723,7 @@ router.get('/topic-dashboard/:topicId', (req, res) => {
     // Topic-level summary
     const summary = queryOne(
       `SELECT COUNT(c.id) as total,
-              SUM(CASE WHEN c.sr_is_active = 1 AND (c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime('now')) THEN 1 ELSE 0 END) as due,
+              SUM(CASE WHEN c.sr_is_active = 1 AND c.sr_slot > 0 AND c.sr_next_due_at IS NOT NULL AND c.sr_next_due_at <= datetime('now') THEN 1 ELSE 0 END) as due,
               SUM(CASE WHEN c.sr_is_active = 1 AND c.sr_grace_deadline IS NOT NULL AND c.sr_grace_deadline <= datetime('now') THEN 1 ELSE 0 END) as overdue,
               SUM(CASE WHEN c.sr_slot >= 12 THEN 1 ELSE 0 END) as mastered
        FROM cards c
