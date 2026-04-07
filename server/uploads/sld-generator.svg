@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 180" width="280" height="180">
+  <style>
+    text { font-family: 'Segoe UI', Arial, sans-serif; }
+  </style>
+  <rect width="280" height="180" rx="8" fill="#1a1a2e"/>
+  
+    <line x1="140" y1="25" x2="140" y2="42" stroke="#f59e0b" stroke-width="2.5"/>
+    <circle cx="140" cy="75" r="33" fill="none" stroke="#f59e0b" stroke-width="2.5"/>
+    <text x="140" y="83" text-anchor="middle" fill="#f59e0b" font-size="28" font-weight="bold">G</text>
+    <line x1="140" y1="108" x2="140" y2="130" stroke="#f59e0b" stroke-width="2.5"/>
+    <text x="195" y="78" fill="#94a3b8" font-size="11">Standby /</text>
+    <text x="195" y="92" fill="#94a3b8" font-size="11">Emergency</text>
+  
+  <text x="140" y="168" text-anchor="middle" fill="#94a3b8" font-size="11">Generator</text>
+</svg>

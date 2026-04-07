@@ -21,8 +21,10 @@ COPY server/ ./server/
 COPY shared/ ./shared/
 COPY tsconfig*.json ./
 
-# Create uploads directory and ensure db directory exists
+# Copy pre-built flashcard database and media (SVG symbols, images)
 RUN mkdir -p server/uploads server/db
+COPY server/db/mnemonic.db ./server/db/
+COPY server/uploads/ ./server/uploads/
 
 ENV NODE_ENV=production
 ENV PORT=3001

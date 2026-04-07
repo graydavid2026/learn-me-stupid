@@ -1,8 +1,8 @@
 node_modules/
 dist/
-server/uploads/*
-!server/uploads/.gitkeep
-server/db/*.db
+# Track db and uploads for production data
+# server/uploads/*
+# server/db/*.db
 .env
 *.log
 .DS_Store

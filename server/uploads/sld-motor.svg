@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 180" width="280" height="180">
+  <style>
+    text { font-family: 'Segoe UI', Arial, sans-serif; }
+  </style>
+  <rect width="280" height="180" rx="8" fill="#1a1a2e"/>
+  
+    <line x1="140" y1="25" x2="140" y2="42" stroke="#f59e0b" stroke-width="2.5"/>
+    <circle cx="140" cy="75" r="33" fill="none" stroke="#f59e0b" stroke-width="2.5"/>
+    <text x="140" y="84" text-anchor="middle" fill="#f59e0b" font-size="28" font-weight="bold">M</text>
+    <text x="195" y="75" fill="#94a3b8" font-size="11">Fed from</text>
+    <text x="195" y="88" fill="#94a3b8" font-size="11">MCC / VFD</text>
+  
+  <text x="140" y="168" text-anchor="middle" fill="#94a3b8" font-size="11">Motor</text>
+</svg>

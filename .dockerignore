@@ -1,8 +1,8 @@
 node_modules/
 dist/
-server/db/*.db
-server/uploads/*
-!server/uploads/.gitkeep
+# Allow db and uploads to be baked into image with flashcard data
+# server/db/*.db
+# server/uploads/*
 .git
 .env
 *.log

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 180" width="280" height="180">
+  <style>
+    text { font-family: 'Segoe UI', Arial, sans-serif; }
+  </style>
+  <rect width="280" height="180" rx="8" fill="#1a1a2e"/>
+  
+    <line x1="140" y1="25" x2="140" y2="50" stroke="#f59e0b" stroke-width="2.5"/>
+    <rect x="118" y="50" width="44" height="44" fill="none" stroke="#f59e0b" stroke-width="2.5" rx="2"/>
+    <text x="140" y="78" text-anchor="middle" fill="#f59e0b" font-size="16" font-weight="bold">52</text>
+    <line x1="140" y1="94" x2="140" y2="120" stroke="#f59e0b" stroke-width="2.5"/>
+    <text x="175" y="78" fill="#94a3b8" font-size="11">ANSI</text>
+    <line x1="40" y1="78" x2="70" y2="78" stroke="#60a5fa" stroke-width="2" stroke-dasharray="4,3"/>
+    <text x="42" y="68" fill="#60a5fa" font-size="10">Trip</text>
+    <path d="M70,78 L80,73 L80,83 Z" fill="#60a5fa"/>
+    <line x1="80" y1="78" x2="118" y2="78" stroke="#60a5fa" stroke-width="2" stroke-dasharray="4,3"/>
+  
+  <text x="140" y="168" text-anchor="middle" fill="#94a3b8" font-size="11">Circuit Breaker</text>
+</svg>
