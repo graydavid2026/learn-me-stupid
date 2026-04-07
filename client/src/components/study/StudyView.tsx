@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { GraduationCap, RotateCcw, Check, X, ChevronRight, Play, Filter, Zap, Clock, Target, ArrowLeft } from 'lucide-react';
+import { GraduationCap, RotateCcw, Check, X, ChevronRight, Play, Filter, Zap, Clock, Target, ArrowLeft, Volume2 } from 'lucide-react';
 import { useStore, CardFull, MediaBlock } from '../../stores/useStore';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 
@@ -30,6 +30,52 @@ function SlotDots({ slot }: { slot: number }) {
   );
 }
 
+// Extract Russian text from bold markers (**text**) and speak it
+function speakText(text: string, lang: string = 'ru-RU') {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  // Extract bold text (Russian words/phrases between **)
+  const boldMatches = text.match(/\*\*([^*]+)\*\*/g);
+  const toSpeak = boldMatches
+    ? boldMatches.map(m => m.replace(/\*\*/g, '')).filter(t => /[а-яА-ЯёЁ]/.test(t)).join('. ')
+    : text;
+  if (!toSpeak) return;
+  const utter = new SpeechSynthesisUtterance(toSpeak);
+  utter.lang = lang;
+  utter.rate = 0.85; // slightly slower for learning
+  utter.pitch = 1;
+  window.speechSynthesis.speak(utter);
+}
+
+function SpeakButton({ text, lang = 'ru-RU' }: { text: string; lang?: string }) {
+  const [speaking, setSpeaking] = useState(false);
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSpeaking(true);
+    speakText(text, lang);
+    setTimeout(() => setSpeaking(false), 2000);
+  };
+  return (
+    <button
+      onClick={handleClick}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+        speaking
+          ? 'bg-accent/30 text-accent border border-accent/40 scale-105'
+          : 'bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-600/30'
+      }`}
+      title="Listen to pronunciation"
+    >
+      <Volume2 className={`w-4 h-4 ${speaking ? 'animate-pulse' : ''}`} />
+      {speaking ? 'Playing...' : 'Listen'}
+    </button>
+  );
+}
+
+// Check if text contains Cyrillic characters
+function hasCyrillic(text: string): boolean {
+  return /[а-яА-ЯёЁ]/.test(text);
+}
+
 function MediaBlockRenderer({ block, hasImage }: { block: MediaBlock; hasImage?: boolean }) {
   switch (block.block_type) {
     case 'text': {
@@ -42,9 +88,17 @@ function MediaBlockRenderer({ block, hasImage }: { block: MediaBlock; hasImage?:
           : 'text-base sm:text-lg leading-relaxed';   // normal
       const maxChars = hasImage ? 200 : 600;
       const display = text.length > maxChars ? text.slice(0, maxChars) + '…' : text;
+      const showSpeak = hasCyrillic(text);
       return (
-        <div className={`${textClass} text-gray-100 whitespace-pre-wrap`}>
-          {display}
+        <div>
+          <div className={`${textClass} text-gray-100 whitespace-pre-wrap`}>
+            {display}
+          </div>
+          {showSpeak && (
+            <div className="mt-2 flex justify-center">
+              <SpeakButton text={text} lang="ru-RU" />
+            </div>
+          )}
         </div>
       );
     }

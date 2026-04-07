@@ -101,7 +101,6 @@ export async function migrate(): Promise<void> {
 
     CREATE INDEX IF NOT EXISTS idx_cards_set ON cards(card_set_id);
     CREATE INDEX IF NOT EXISTS idx_cards_due ON cards(sr_next_due_at, sr_is_active);
-    CREATE INDEX IF NOT EXISTS idx_cards_slot ON cards(sr_slot);
     CREATE INDEX IF NOT EXISTS idx_card_sides ON card_sides(card_id, side);
     CREATE INDEX IF NOT EXISTS idx_media_blocks ON media_blocks(card_side_id, sort_order);
     CREATE INDEX IF NOT EXISTS idx_mindmap_nodes_topic ON mindmap_nodes(topic_id);
@@ -146,6 +145,11 @@ export async function migrate(): Promise<void> {
   } catch (e) {
     // Table might not exist yet
   }
+
+  // Create sr_slot index after migration ensures the column exists
+  try {
+    exec(`CREATE INDEX IF NOT EXISTS idx_cards_slot ON cards(sr_slot)`);
+  } catch (_) {}
 
   console.log('Database migrated successfully');
 }
