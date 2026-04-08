@@ -714,7 +714,7 @@ export function StudyView() {
 
             {/* BACK FACE */}
             <div
-              className="card p-4 sm:p-6 absolute inset-0 overflow-y-auto"
+              className="card p-4 sm:p-6 absolute inset-0"
               style={{
                 backfaceVisibility: 'hidden',
                 transform: 'rotateY(180deg)',
@@ -732,18 +732,8 @@ export function StudyView() {
                 })()}
               </div>
 
-              {/* Elaboration prompts */}
-              <ElaborationPanel
-                card={currentCard}
-                onCardUpdated={(updated) => {
-                  const updatedQueue = [...queue];
-                  updatedQueue[currentIndex] = updated;
-                  setQueue(updatedQueue);
-                }}
-              />
-
               {/* Correct / Wrong buttons */}
-              <div className="border-t border-border mt-2 pt-3">
+              <div className="border-t border-border mt-3 pt-3">
                 <div className="flex gap-3">
                   <button
                     onClick={(e) => { e.stopPropagation(); handleGrade('wrong'); }}
