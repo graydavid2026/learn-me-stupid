@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { GraduationCap, RotateCcw, Check, X, ChevronRight, Play, Filter, Zap, Clock, Target, ArrowLeft, Volume2, Maximize2 } from 'lucide-react';
+import { GraduationCap, RotateCcw, Check, X, ChevronRight, Play, Filter, Zap, Clock, Target, ArrowLeft, Volume2, Maximize2, Lightbulb, MessageSquare, Link2, AlertTriangle, Send, Loader2 } from 'lucide-react';
 import { useStore, CardFull, MediaBlock } from '../../stores/useStore';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ImageLightbox, HotspotImage, parseHotspotData } from './ImageViewer';
@@ -86,6 +86,183 @@ function renderMarkdownBold(text: string): (string | JSX.Element)[] {
     }
     return part;
   });
+}
+
+// ─── Elaboration Panel — inline learning prompts on card back ───
+
+interface ElaborationPrompt {
+  id: string;
+  label: string;
+  icon: any;
+  placeholder: string;
+  color: string;
+}
+
+const ELABORATION_PROMPTS: ElaborationPrompt[] = [
+  { id: 'example', label: 'Real-World Example', icon: Lightbulb, placeholder: 'Describe a real scenario where this applies...', color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30' },
+  { id: 'mistake', label: 'Common Mistake', icon: AlertTriangle, placeholder: 'What do people get wrong about this?', color: 'text-red-400 bg-red-500/10 border-red-500/30' },
+  { id: 'connection', label: 'Connects To...', icon: Link2, placeholder: 'How does this relate to other concepts you know?', color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' },
+  { id: 'own-words', label: 'In My Own Words', icon: MessageSquare, placeholder: 'Explain this like you\'re teaching someone...', color: 'text-green-400 bg-green-500/10 border-green-500/30' },
+];
+
+function ElaborationPanel({ card, onCardUpdated }: { card: CardFull; onCardUpdated: (card: CardFull) => void }) {
+  const [activePrompt, setActivePrompt] = useState<string | null>(null);
+  const [inputValue, setInputValue] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [savedNotes, setSavedNotes] = useState<Record<string, string>>({});
+
+  // Parse existing notes from the card's back side
+  useEffect(() => {
+    const notes: Record<string, string> = {};
+    card.back.media_blocks.forEach(block => {
+      if (block.block_type === 'text' && block.text_content) {
+        for (const prompt of ELABORATION_PROMPTS) {
+          const prefix = `**${prompt.label}:** `;
+          if (block.text_content.startsWith(prefix)) {
+            notes[prompt.id] = block.text_content.slice(prefix.length);
+          }
+        }
+      }
+    });
+    setSavedNotes(notes);
+  }, [card.id]);
+
+  const handleSave = async (promptId: string) => {
+    if (!inputValue.trim()) return;
+    setSaving(true);
+
+    const prompt = ELABORATION_PROMPTS.find(p => p.id === promptId)!;
+    const noteText = `**${prompt.label}:** ${inputValue.trim()}`;
+
+    // Build updated back media blocks — add the note as a new text block
+    const existingBlocks = card.back.media_blocks
+      .filter(b => !(b.block_type === 'text' && b.text_content?.startsWith(`**${prompt.label}:** `)))
+      .map(b => ({
+        block_type: b.block_type,
+        text_content: b.text_content || null,
+        file_path: b.file_path || null,
+        file_name: b.file_name || null,
+        file_size: b.file_size || null,
+        mime_type: b.mime_type || null,
+      }));
+
+    const updatedBlocks = [
+      ...existingBlocks,
+      { block_type: 'text' as const, text_content: noteText, file_path: null, file_name: null, file_size: null, mime_type: null },
+    ];
+
+    try {
+      const res = await fetch(`/api/cards/${card.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tags: typeof card.tags === 'string' ? JSON.parse(card.tags || '[]') : card.tags,
+          front: {
+            media_blocks: card.front.media_blocks.map(b => ({
+              block_type: b.block_type,
+              text_content: b.text_content || null,
+              file_path: b.file_path || null,
+              file_name: b.file_name || null,
+              file_size: b.file_size || null,
+              mime_type: b.mime_type || null,
+            })),
+          },
+          back: { media_blocks: updatedBlocks },
+        }),
+      });
+
+      if (res.ok) {
+        const updated = await res.json();
+        setSavedNotes(prev => ({ ...prev, [promptId]: inputValue.trim() }));
+        setActivePrompt(null);
+        setInputValue('');
+        onCardUpdated(updated);
+      }
+    } catch (err) {
+      console.error('Failed to save note:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="border-t border-border mt-2 pt-2" onClick={e => e.stopPropagation()}>
+      <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1.5 text-center">Deepen Your Understanding</div>
+      <div className="grid grid-cols-2 gap-1.5">
+        {ELABORATION_PROMPTS.map(prompt => {
+          const Icon = prompt.icon;
+          const hasSaved = !!savedNotes[prompt.id];
+          const isActive = activePrompt === prompt.id;
+
+          return (
+            <div key={prompt.id}>
+              <button
+                onClick={() => {
+                  if (isActive) {
+                    setActivePrompt(null);
+                    setInputValue('');
+                  } else {
+                    setActivePrompt(prompt.id);
+                    setInputValue(savedNotes[prompt.id] || '');
+                  }
+                }}
+                className={`w-full text-left px-2.5 py-2 rounded-lg border text-xs font-medium transition-all flex items-center gap-2 min-h-[40px] ${
+                  hasSaved
+                    ? 'bg-green-500/10 border-green-500/30 text-green-400'
+                    : isActive
+                      ? prompt.color + ' ring-1 ring-current'
+                      : 'bg-surface-base border-border text-gray-400 hover:text-gray-200 hover:border-gray-500'
+                }`}
+              >
+                <Icon className="w-4 h-4 shrink-0" />
+                <span className="truncate">{prompt.label}</span>
+                {hasSaved && <Check className="w-3 h-3 ml-auto shrink-0" />}
+              </button>
+
+              {isActive && (
+                <div className="mt-1.5 mb-1">
+                  <textarea
+                    autoFocus
+                    value={inputValue}
+                    onChange={e => setInputValue(e.target.value)}
+                    placeholder={prompt.placeholder}
+                    rows={2}
+                    className="w-full bg-surface-base border border-border rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-accent focus:outline-none resize-none"
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSave(prompt.id);
+                      }
+                      if (e.key === 'Escape') {
+                        setActivePrompt(null);
+                        setInputValue('');
+                      }
+                    }}
+                  />
+                  <div className="flex justify-end gap-2 mt-1">
+                    <button
+                      onClick={() => { setActivePrompt(null); setInputValue(''); }}
+                      className="px-2.5 py-1 text-xs text-gray-400 hover:text-gray-200"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => handleSave(prompt.id)}
+                      disabled={saving || !inputValue.trim()}
+                      className="px-3 py-1 bg-accent/20 text-accent text-xs font-medium rounded-lg border border-accent/30 hover:bg-accent/30 disabled:opacity-40 flex items-center gap-1.5 min-h-[32px]"
+                    >
+                      {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                      Save
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function ZoomableImage({ src, alt }: { src: string; alt: string }) {
@@ -537,7 +714,7 @@ export function StudyView() {
 
             {/* BACK FACE */}
             <div
-              className="card p-4 sm:p-6 absolute inset-0"
+              className="card p-4 sm:p-6 absolute inset-0 overflow-y-auto"
               style={{
                 backfaceVisibility: 'hidden',
                 transform: 'rotateY(180deg)',
@@ -555,8 +732,18 @@ export function StudyView() {
                 })()}
               </div>
 
+              {/* Elaboration prompts */}
+              <ElaborationPanel
+                card={currentCard}
+                onCardUpdated={(updated) => {
+                  const updatedQueue = [...queue];
+                  updatedQueue[currentIndex] = updated;
+                  setQueue(updatedQueue);
+                }}
+              />
+
               {/* Correct / Wrong buttons */}
-              <div className="border-t border-border mt-3 pt-3">
+              <div className="border-t border-border mt-2 pt-3">
                 <div className="flex gap-3">
                   <button
                     onClick={(e) => { e.stopPropagation(); handleGrade('wrong'); }}
