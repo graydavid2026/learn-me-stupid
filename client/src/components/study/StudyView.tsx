@@ -255,11 +255,11 @@ export function StudyView() {
       url = '/api/study/due?';
     } else if (mode === 'new') {
       params.set('mode', 'new');
-      params.set('limit', '15');
+      params.set('limit', '2');
       url = '/api/study/due?';
     } else if (mode === 'mixed') {
       params.set('mode', 'mixed');
-      params.set('limit', '10');
+      params.set('limit', '2');
       url = '/api/study/due?';
     } else {
       // focus mode — use legacy (all due for the set)
@@ -606,8 +606,8 @@ export function StudyView() {
       <div className="grid grid-cols-2 gap-3 mb-6">
         {[
           { id: 'review' as StudyMode, label: 'Review Due', desc: 'Cards you\'ve studied that need review', icon: Clock },
-          { id: 'new' as StudyMode, label: 'Learn New', desc: 'Introduce 15 new cards', icon: GraduationCap },
-          { id: 'mixed' as StudyMode, label: 'Mixed Session', desc: 'Review due + 10 new cards', icon: Zap },
+          { id: 'new' as StudyMode, label: 'Learn New', desc: 'Introduce 2 new cards', icon: GraduationCap },
+          { id: 'mixed' as StudyMode, label: 'Mixed Session', desc: 'Review due + 2 new cards', icon: Zap },
           { id: 'focus' as StudyMode, label: 'Focus Set', desc: 'Study a specific card set', icon: Target },
           { id: 'pipeline' as StudyMode, label: 'Ahead of Schedule', desc: 'Study upcoming cards early', icon: Play },
         ].map(({ id, label, desc, icon: Icon }) => (
