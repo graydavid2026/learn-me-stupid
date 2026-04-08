@@ -197,6 +197,15 @@ export function StudyView() {
   const startTime = useRef<number>(0);
   const autoStarted = useRef(false);
 
+  // Reset session when topic changes
+  useEffect(() => {
+    setSessionActive(false);
+    setSessionComplete(false);
+    setQueue([]);
+    setCurrentIndex(0);
+    setFlipped(false);
+  }, [selectedTopicId]);
+
   // Auto-start when navigated from dashboard with ?set=xxx
   useEffect(() => {
     if (urlSetId && !autoStarted.current && !sessionActive) {
@@ -260,6 +269,12 @@ export function StudyView() {
     try {
       const res = await fetch(url + params.toString());
       const cards: CardFull[] = await res.json();
+
+      // Shuffle cards so they're never in predictable order
+      for (let i = cards.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [cards[i], cards[j]] = [cards[j], cards[i]];
+      }
 
       setQueue(cards);
       setCurrentIndex(0);

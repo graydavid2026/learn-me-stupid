@@ -1,6 +1,7 @@
 import { useStore, CardFull } from '../../stores/useStore';
 import { useEffect, useState } from 'react';
-import { Plus, FolderOpen, Trash2, Check, X, Pencil, ChevronRight, FileText, Layers } from 'lucide-react';
+import { Plus, FolderOpen, Trash2, Check, X, Pencil, ChevronRight, FileText, Layers, Play } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { CardEditor } from './CardEditor';
 import { DeleteConfirmModal } from '../ui/DeleteConfirmModal';
 import { SLOT_COLORS } from '../../utils/formatters';
@@ -42,6 +43,7 @@ export function CardsView() {
     cards, loadingCards, fetchCards, deleteCard,
     showCardEditor, openNewCard, openEditCard,
   } = useStore();
+  const navigate = useNavigate();
 
   const [creatingSet, setCreatingSet] = useState(false);
   const [newSetName, setNewSetName] = useState('');
@@ -186,7 +188,7 @@ export function CardsView() {
                         {set.description && <p className="text-sm text-gray-400">{set.description}</p>}
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 sm:gap-3">
                       <span className="text-sm text-gray-500 font-mono">{set.card_count} cards</span>
                       {set.due_count > 0 && (
                         <span className="text-xs bg-amber-500/20 text-amber-400 px-2.5 py-1 rounded-full font-mono">
@@ -203,6 +205,13 @@ export function CardsView() {
                           {set.new_count} new
                         </span>
                       )}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); navigate(`/study?set=${set.id}`); }}
+                        className="px-3 py-1.5 bg-accent/20 hover:bg-accent/30 active:bg-accent/40 text-accent text-xs font-medium rounded-lg border border-accent/30 transition-colors min-h-[36px] flex items-center gap-1.5"
+                      >
+                        <Play className="w-3.5 h-3.5" />
+                        Study
+                      </button>
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
                         onClick={(e) => e.stopPropagation()}
                       >
