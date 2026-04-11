@@ -959,7 +959,7 @@ export function StudyView() {
               </div>
 
               {/* Front content (scrolls if long) */}
-              <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center space-y-3 min-h-[80px]">
+              <div className="flex-1 overflow-y-auto flex flex-col justify-center space-y-3 min-h-[80px] text-center">
                 {(() => {
                   const hasImg = currentCard.front.media_blocks.some(b => b.block_type === 'image' || b.block_type === 'video');
                   return currentCard.front.media_blocks.map((block) => (

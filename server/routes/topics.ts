@@ -97,6 +97,128 @@ router.put('/:id', (req, res) => {
   }
 });
 
+// GET /api/topics/:id/prompt — Generate an LLM prompt seeded with topic context
+// so the user can paste it into Claude/GPT and get new flashcards back in a
+// format that either (a) maps cleanly to the Create Card UI or (b) can be
+// dropped into Claude Code for bulk insertion.
+router.get('/:id/prompt', (req, res) => {
+  try {
+    const { id } = req.params;
+    const topic: any = queryOne('SELECT * FROM topics WHERE id = ?', [id]);
+    if (!topic) return res.status(404).json({ error: 'Topic not found' });
+
+    const sets: any[] = queryAll(
+      `SELECT cs.id, cs.name, cs.description, COUNT(c.id) as card_count
+       FROM card_sets cs
+       LEFT JOIN cards c ON c.card_set_id = cs.id
+       WHERE cs.topic_id = ?
+       GROUP BY cs.id
+       ORDER BY cs.sort_order, cs.created_at`,
+      [id]
+    );
+
+    // Sample up to 8 cards from this topic to show the LLM the existing style.
+    const sampleCards: any[] = queryAll(
+      `SELECT c.id, cs.name as set_name
+       FROM cards c
+       JOIN card_sets cs ON cs.id = c.card_set_id
+       WHERE cs.topic_id = ?
+       ORDER BY RANDOM()
+       LIMIT 8`,
+      [id]
+    );
+
+    const cardTextOfSide = (cardId: string, side: 0 | 1): string => {
+      const sideRow: any = queryOne(
+        'SELECT id FROM card_sides WHERE card_id = ? AND side = ?',
+        [cardId, side]
+      );
+      if (!sideRow) return '';
+      const blocks: any[] = queryAll(
+        `SELECT text_content FROM media_blocks
+         WHERE card_side_id = ? AND block_type = 'text'
+         ORDER BY sort_order`,
+        [sideRow.id]
+      );
+      return blocks.map((b) => b.text_content || '').filter(Boolean).join('\n').trim();
+    };
+
+    const exampleBlocks = sampleCards
+      .map((c, i) => {
+        const front = cardTextOfSide(c.id, 0);
+        const back = cardTextOfSide(c.id, 1);
+        return `### Example ${i + 1} — Set: ${c.set_name}
+Front:
+${front || '(empty)'}
+
+Back:
+${back || '(empty)'}`;
+      })
+      .join('\n\n---\n\n');
+
+    const setLines = sets
+      .map((s) => `- ${s.name}${s.description ? ` — ${s.description}` : ''} (${s.card_count} cards, id: ${s.id})`)
+      .join('\n') || '(no card sets yet)';
+
+    const prompt = `You are helping me build flashcards for the topic "${topic.name}" in a spaced-repetition study app.
+
+# Topic
+**Name:** ${topic.name}
+${topic.description ? `**Description:** ${topic.description}` : ''}
+**Topic ID:** ${topic.id}
+
+# Existing Card Sets
+${setLines}
+
+# Style Examples (existing cards in this topic)
+${exampleBlocks || '(no existing cards — infer a reasonable style from the topic name)'}
+
+# What I need
+Generate 10 NEW flashcards for this topic that match the style above.
+- Do not duplicate any of the existing examples.
+- Front should be a prompt (term / question / concept).
+- Back should be a concise, complete answer.
+- Keep markdown formatting (e.g. \`**bold**\`) consistent with the examples.
+- If the topic involves a non-English language, keep the target word clean on the front; do NOT include parenthesized romanizations or part-of-speech tags — the app strips them.
+
+# Output — give me BOTH of these
+
+## 1. Human-readable (for copy/paste into the Create Card UI)
+\`\`\`
+Card 1
+Front: ...
+Back: ...
+
+Card 2
+Front: ...
+Back: ...
+\`\`\`
+
+## 2. Claude Code bulk-insert JSON
+A single JSON blob I can hand to Claude Code with the instruction "insert these cards into the Gray Road learn-me-stupid DB". Pick an appropriate existing card set id from the list above, or tell me which new set to create.
+
+\`\`\`json
+{
+  "topic_id": "${topic.id}",
+  "card_set_id": "<pick one from the list above>",
+  "cards": [
+    {
+      "tags": [],
+      "front": { "text": "..." },
+      "back":  { "text": "..." }
+    }
+  ]
+}
+\`\`\`
+`;
+
+    res.json({ prompt });
+  } catch (err) {
+    console.error('Error generating topic prompt:', err);
+    res.status(500).json({ error: 'Failed to generate prompt' });
+  }
+});
+
 // DELETE /api/topics/:id — Delete topic (cascades)
 router.delete('/:id', (req, res) => {
   try {
