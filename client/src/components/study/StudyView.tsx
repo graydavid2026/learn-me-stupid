@@ -108,9 +108,9 @@ function cancelSpeech() {
   }
 }
 
-// Speak a card: auto-detect Russian vs English per segment, pause 2 seconds
-// between the headword (first segment) and the example phrase.
-function speakCard(segments: string[]) {
+// Speak a card: auto-detect Russian vs English per segment, and pause for
+// `pauseAfterFirstMs` ms between the first segment (headword) and the rest.
+function speakCard(segments: string[], pauseAfterFirstMs = 2000) {
   cancelSpeech();
   if (!window.speechSynthesis || segments.length === 0) return;
   const plan = buildUtterancePlan(segments);
@@ -124,9 +124,9 @@ function speakCard(segments: string[]) {
     let chunkIdx = 0;
     const speakNextChunk = () => {
       if (chunkIdx >= chunks.length) {
-        // Just finished the headword (first entry) — pause 2 seconds before the phrase.
+        // Just finished the first entry — pause before the rest.
         if (entryIndex === 1 && plan.length > 1) {
-          pendingTtsTimer = setTimeout(speakEntry, 2000);
+          pendingTtsTimer = setTimeout(speakEntry, pauseAfterFirstMs);
         } else {
           speakEntry();
         }
@@ -473,6 +473,9 @@ export function StudyView() {
 
   // Auto read-aloud: speak front when card appears, back when flipped.
   // Language is auto-detected per segment (Cyrillic → Russian, else English).
+  // When flipped on an English-vocab card (front is Latin), prepend the
+  // headword to the back reading and use a 1-second pause before the
+  // definition/example.
   useEffect(() => {
     if (!ttsEnabled || !sessionActive || sessionComplete) {
       cancelSpeech();
@@ -480,8 +483,20 @@ export function StudyView() {
     }
     const card = queue[currentIndex];
     if (!card) return;
-    const segments = extractSideSegments(flipped ? card.back : card.front);
-    if (segments.length > 0) speakCard(segments);
+    if (flipped) {
+      const frontSegs = extractSideSegments(card.front);
+      const backSegs = extractSideSegments(card.back);
+      const frontHeadword = frontSegs[0];
+      const frontIsEnglish = frontHeadword && !/[\u0400-\u04FF]/.test(frontHeadword);
+      if (frontIsEnglish && frontHeadword) {
+        speakCard([frontHeadword, ...backSegs], 1000);
+      } else if (backSegs.length > 0) {
+        speakCard(backSegs);
+      }
+    } else {
+      const segs = extractSideSegments(card.front);
+      if (segs.length > 0) speakCard(segs);
+    }
   }, [ttsEnabled, sessionActive, sessionComplete, currentIndex, flipped, queue]);
 
   // Stop any in-flight speech when leaving the session
@@ -700,8 +715,20 @@ export function StudyView() {
   const speakCurrentSide = useCallback(() => {
     const card = queue[currentIndex];
     if (!card) return;
-    const segments = extractSideSegments(flipped ? card.back : card.front);
-    if (segments.length > 0) speakCard(segments);
+    if (flipped) {
+      const frontSegs = extractSideSegments(card.front);
+      const backSegs = extractSideSegments(card.back);
+      const frontHeadword = frontSegs[0];
+      const frontIsEnglish = frontHeadword && !/[\u0400-\u04FF]/.test(frontHeadword);
+      if (frontIsEnglish && frontHeadword) {
+        speakCard([frontHeadword, ...backSegs], 1000);
+      } else if (backSegs.length > 0) {
+        speakCard(backSegs);
+      }
+    } else {
+      const segs = extractSideSegments(card.front);
+      if (segs.length > 0) speakCard(segs);
+    }
   }, [queue, currentIndex, flipped]);
   const speakCurrentSideRef = useRef(speakCurrentSide);
   useEffect(() => { speakCurrentSideRef.current = speakCurrentSide; }, [speakCurrentSide]);
