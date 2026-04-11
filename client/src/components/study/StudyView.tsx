@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { GraduationCap, RotateCcw, Check, X, ChevronRight, Play, Filter, Zap, Clock, Target, ArrowLeft, Volume2, Mic, Maximize2, Lightbulb, MessageSquare, Link2, AlertTriangle, Send, Loader2 } from 'lucide-react';
+import { GraduationCap, RotateCcw, Check, X, ChevronRight, Play, Filter, Zap, Clock, Target, ArrowLeft, Mic, Maximize2, Lightbulb, MessageSquare, Link2, AlertTriangle, Send, Loader2 } from 'lucide-react';
 import { useStore, CardFull, MediaBlock, CardSideFull } from '../../stores/useStore';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ImageLightbox, HotspotImage, parseHotspotData } from './ImageViewer';
@@ -31,51 +31,6 @@ function SlotDots({ slot }: { slot: number }) {
   );
 }
 
-// Extract Russian text from bold markers (**text**) and speak it
-function speakText(text: string, lang: string = 'ru-RU') {
-  if (!window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-  // Extract bold text (Russian words/phrases between **)
-  const boldMatches = text.match(/\*\*([^*]+)\*\*/g);
-  const toSpeak = boldMatches
-    ? boldMatches.map(m => m.replace(/\*\*/g, '')).filter(t => /[а-яА-ЯёЁ]/.test(t)).join('. ')
-    : text;
-  if (!toSpeak) return;
-  const utter = new SpeechSynthesisUtterance(toSpeak);
-  utter.lang = lang;
-  utter.rate = 0.85; // slightly slower for learning
-  utter.pitch = 1;
-  window.speechSynthesis.speak(utter);
-}
-
-function SpeakButton({ text, lang = 'ru-RU' }: { text: string; lang?: string }) {
-  const [speaking, setSpeaking] = useState(false);
-  const handleClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setSpeaking(true);
-    speakText(text, lang);
-    setTimeout(() => setSpeaking(false), 2000);
-  };
-  return (
-    <button
-      onClick={handleClick}
-      className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all min-h-[44px] ${
-        speaking
-          ? 'bg-accent/30 text-accent border border-accent/40 scale-105'
-          : 'bg-purple-600/20 hover:bg-purple-600/30 active:bg-purple-600/40 text-purple-300 border border-purple-600/30'
-      }`}
-      aria-label={speaking ? 'Playing pronunciation' : 'Listen to pronunciation'}
-    >
-      <Volume2 className={`w-5 h-5 ${speaking ? 'animate-pulse' : ''}`} />
-      {speaking ? 'Playing...' : 'Listen'}
-    </button>
-  );
-}
-
-// Check if text contains Cyrillic characters
-function hasCyrillic(text: string): boolean {
-  return /[а-яА-ЯёЁ]/.test(text);
-}
 
 // Extract plain-text from a card side (concatenates text blocks, strips ** markers)
 function extractSideText(side: CardSideFull): string {
@@ -313,18 +268,12 @@ function MediaBlockRenderer({ block, hasImage }: { block: MediaBlock; hasImage?:
           : 'text-base sm:text-lg leading-relaxed';   // normal
       const maxChars = hasImage ? 200 : 600;
       const display = text.length > maxChars ? text.slice(0, maxChars) + '…' : text;
-      const showSpeak = hasCyrillic(text);
       const hasMarkdown = display.includes('**');
       return (
         <div>
           <div className={`${textClass} text-gray-100 whitespace-pre-wrap`}>
             {hasMarkdown ? renderMarkdownBold(display) : display}
           </div>
-          {showSpeak && (
-            <div className="mt-3 flex justify-center">
-              <SpeakButton text={text} lang="ru-RU" />
-            </div>
-          )}
         </div>
       );
     }
