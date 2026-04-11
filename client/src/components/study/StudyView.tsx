@@ -349,10 +349,23 @@ function ZoomableImage({ src, alt }: { src: string; alt: string }) {
   );
 }
 
+// Strip parenthetical annotations and "Pronunciation: ..." lines from card
+// display text so we never show them even before the DB migration runs.
+function cleanDisplayText(raw: string): string {
+  return raw
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*pronunciation\s*:/i.test(line))
+    .join('\n')
+    .replace(/\s*\([^)]*\)/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .trim();
+}
+
 function MediaBlockRenderer({ block, hasImage }: { block: MediaBlock; hasImage?: boolean }) {
   switch (block.block_type) {
     case 'text': {
-      const text = block.text_content || '';
+      const text = cleanDisplayText(block.text_content || '');
       // When card has an image, shrink text and truncate to keep card compact
       const textClass = hasImage
         ? 'text-[13px] sm:text-sm leading-snug'  // smaller when image present
