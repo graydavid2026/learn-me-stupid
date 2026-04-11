@@ -85,6 +85,14 @@ interface AppState {
   editingCard: CardFull | null;
   showCardEditor: boolean;
 
+  // TTS settings (global, persisted to localStorage)
+  ttsEnabled: boolean;
+  ttsLang: 'en-US' | 'es-ES' | 'ru-RU';
+  setTtsEnabled: (enabled: boolean) => void;
+  setTtsLang: (lang: 'en-US' | 'es-ES' | 'ru-RU') => void;
+  voiceCmdEnabled: boolean;
+  setVoiceCmdEnabled: (enabled: boolean) => void;
+
   // Topic actions
   fetchTopics: () => Promise<void>;
   selectTopic: (id: string | null) => void;
@@ -122,6 +130,36 @@ export const useStore = create<AppState>((set, get) => ({
   loadingCards: false,
   editingCard: null,
   showCardEditor: false,
+
+  ttsEnabled: (() => {
+    try { return localStorage.getItem('lms.ttsEnabled') === '1'; } catch { return false; }
+  })(),
+  ttsLang: (() => {
+    try {
+      const v = localStorage.getItem('lms.ttsLang');
+      if (v === 'en-US' || v === 'es-ES' || v === 'ru-RU') return v;
+    } catch {}
+    return 'en-US';
+  })(),
+  setTtsEnabled: (enabled) => {
+    try { localStorage.setItem('lms.ttsEnabled', enabled ? '1' : '0'); } catch {}
+    if (!enabled && typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    set({ ttsEnabled: enabled });
+  },
+  setTtsLang: (lang) => {
+    try { localStorage.setItem('lms.ttsLang', lang); } catch {}
+    set({ ttsLang: lang });
+  },
+
+  voiceCmdEnabled: (() => {
+    try { return localStorage.getItem('lms.voiceCmdEnabled') === '1'; } catch { return false; }
+  })(),
+  setVoiceCmdEnabled: (enabled) => {
+    try { localStorage.setItem('lms.voiceCmdEnabled', enabled ? '1' : '0'); } catch {}
+    set({ voiceCmdEnabled: enabled });
+  },
 
   fetchTopics: async () => {
     set({ loadingTopics: true });

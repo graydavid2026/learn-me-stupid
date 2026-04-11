@@ -1,6 +1,6 @@
 import { ReactNode, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { BookOpen, GraduationCap, LayoutGrid, Brain, BarChart3 } from 'lucide-react';
+import { BookOpen, GraduationCap, LayoutGrid, Brain, BarChart3, Settings } from 'lucide-react';
 import { useStore } from '../../stores/useStore';
 import { TopicDropdown } from './TopicDropdown';
 
@@ -9,6 +9,7 @@ const navItems = [
   { to: '/cards', label: 'Cards', icon: LayoutGrid },
   { to: '/deep-dive', label: 'Deep Dive', icon: Brain },
   { to: '/stats', label: 'Stats', icon: BarChart3 },
+  { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {

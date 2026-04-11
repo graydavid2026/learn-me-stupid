@@ -5,6 +5,7 @@ import { StudyView } from './components/study/StudyView';
 import { CardsView } from './components/cards/CardsView';
 import { DeepDiveView } from './components/deepdive/DeepDiveView';
 import { DashboardView } from './components/dashboard/DashboardView';
+import { SettingsView } from './components/settings/SettingsView';
 import { SearchOverlay } from './components/layout/SearchOverlay';
 
 export default function App() {
@@ -27,6 +28,7 @@ export default function App() {
             <Route path="/cards" element={<CardsView />} />
             <Route path="/deep-dive" element={<DeepDiveView />} />
             <Route path="/stats" element={<DashboardView />} />
+            <Route path="/settings" element={<SettingsView />} />
           </Routes>
         </motion.div>
       </AnimatePresence>

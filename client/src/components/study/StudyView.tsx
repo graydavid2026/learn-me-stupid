@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { GraduationCap, RotateCcw, Check, X, ChevronRight, Play, Filter, Zap, Clock, Target, ArrowLeft, Volume2, Maximize2, Lightbulb, MessageSquare, Link2, AlertTriangle, Send, Loader2 } from 'lucide-react';
-import { useStore, CardFull, MediaBlock } from '../../stores/useStore';
+import { GraduationCap, RotateCcw, Check, X, ChevronRight, Play, Filter, Zap, Clock, Target, ArrowLeft, Volume2, Mic, Maximize2, Lightbulb, MessageSquare, Link2, AlertTriangle, Send, Loader2 } from 'lucide-react';
+import { useStore, CardFull, MediaBlock, CardSideFull } from '../../stores/useStore';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ImageLightbox, HotspotImage, parseHotspotData } from './ImageViewer';
 
@@ -75,6 +75,26 @@ function SpeakButton({ text, lang = 'ru-RU' }: { text: string; lang?: string }) 
 // Check if text contains Cyrillic characters
 function hasCyrillic(text: string): boolean {
   return /[а-яА-ЯёЁ]/.test(text);
+}
+
+// Extract plain-text from a card side (concatenates text blocks, strips ** markers)
+function extractSideText(side: CardSideFull): string {
+  return side.media_blocks
+    .filter((b) => b.block_type === 'text' && b.text_content)
+    .map((b) => (b.text_content || '').replace(/\*\*/g, ''))
+    .join('. ')
+    .trim();
+}
+
+// Speak arbitrary text in the selected language (for auto-read)
+function speakPlain(text: string, lang: string) {
+  if (!window.speechSynthesis || !text) return;
+  window.speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = lang;
+  utter.rate = 0.9;
+  utter.pitch = 1;
+  window.speechSynthesis.speak(utter);
 }
 
 // Render markdown-style bold (**text**) as <strong> elements
@@ -356,6 +376,9 @@ interface SessionStats {
 
 export function StudyView() {
   const { selectedTopicId, topics, cardSets, fetchTopics } = useStore();
+  const ttsEnabled = useStore((s) => s.ttsEnabled);
+  const ttsLang = useStore((s) => s.ttsLang);
+  const voiceCmdEnabled = useStore((s) => s.voiceCmdEnabled);
   const selectedTopic = topics.find((t) => t.id === selectedTopicId);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -373,6 +396,9 @@ export function StudyView() {
   const [filterSetId, setFilterSetId] = useState<string>(urlSetId || '');
   const startTime = useRef<number>(0);
   const autoStarted = useRef(false);
+  const flippedRef = useRef(flipped);
+  const handleGradeRef = useRef<(r: 'correct' | 'wrong') => void>(() => {});
+  useEffect(() => { flippedRef.current = flipped; }, [flipped]);
 
   // Reset session when topic changes
   useEffect(() => {
@@ -391,6 +417,24 @@ export function StudyView() {
     }
   }, [urlSetId]);
 
+  // Auto read-aloud: speak front when card appears, back when flipped
+  useEffect(() => {
+    if (!ttsEnabled || !sessionActive || sessionComplete) return;
+    const card = queue[currentIndex];
+    if (!card) return;
+    const text = extractSideText(flipped ? card.back : card.front);
+    if (text) speakPlain(text, ttsLang);
+  }, [ttsEnabled, ttsLang, sessionActive, sessionComplete, currentIndex, flipped, queue]);
+
+  // Stop any in-flight speech when leaving the session
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
   // Keyboard shortcuts
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -407,6 +451,61 @@ export function StudyView() {
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [sessionActive, sessionComplete, flipped, currentIndex, queue]);
+
+  // Voice commands: listen for "flip card", "wrong", "correct", "end session"
+  useEffect(() => {
+    if (!voiceCmdEnabled || !sessionActive || sessionComplete) return;
+    const SR: any =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      console.warn('SpeechRecognition not supported in this browser');
+      return;
+    }
+    const recog = new SR();
+    recog.continuous = true;
+    recog.interimResults = false;
+    recog.lang = 'en-US';
+    let stopped = false;
+
+    recog.onresult = (ev: any) => {
+      // Don't process commands while TTS is speaking (avoid self-triggering)
+      if (window.speechSynthesis && window.speechSynthesis.speaking) return;
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const res = ev.results[i];
+        if (!res.isFinal) continue;
+        const transcript = (res[0].transcript || '').toLowerCase().trim();
+        if (!transcript) continue;
+        if (transcript.includes('end session')) {
+          setSessionActive(false);
+          setSessionComplete(false);
+        } else if (transcript.includes('flip')) {
+          setFlipped((f) => !f);
+        } else if (flippedRef.current && transcript.includes('correct')) {
+          handleGradeRef.current('correct');
+        } else if (flippedRef.current && transcript.includes('wrong')) {
+          handleGradeRef.current('wrong');
+        }
+      }
+    };
+
+    recog.onerror = (e: any) => {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        stopped = true;
+      }
+    };
+
+    recog.onend = () => {
+      if (!stopped) {
+        try { recog.start(); } catch {}
+      }
+    };
+
+    try { recog.start(); } catch {}
+    return () => {
+      stopped = true;
+      try { recog.stop(); } catch {}
+    };
+  }, [voiceCmdEnabled, sessionActive, sessionComplete]);
 
   const runDecayCheck = async () => {
     try {
@@ -511,6 +610,8 @@ export function StudyView() {
       startTime.current = Date.now();
     }
   }, [currentIndex, queue, fetchTopics]);
+
+  useEffect(() => { handleGradeRef.current = handleGrade; }, [handleGrade]);
 
   const currentCard = queue[currentIndex];
 
