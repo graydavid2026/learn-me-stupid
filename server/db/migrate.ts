@@ -1,4 +1,4 @@
-import { initDb, exec, queryAll } from './index.js';
+import { initDb, exec, queryAll, run } from './index.js';
 // initDb is used when running as standalone script
 
 export async function migrate(): Promise<void> {
@@ -150,6 +150,33 @@ export async function migrate(): Promise<void> {
   try {
     exec(`CREATE INDEX IF NOT EXISTS idx_cards_slot ON cards(sr_slot)`);
   } catch (_) {}
+
+  // One-time cleanup: strip "Pronunciation: ..." lines from all text blocks.
+  // Idempotent — running again on already-cleaned text is a no-op.
+  try {
+    const rows = queryAll(
+      `SELECT id, text_content FROM media_blocks WHERE block_type = 'text' AND text_content LIKE '%Pronunciation:%'`
+    );
+    let cleaned = 0;
+    for (const row of rows) {
+      const original: string = row.text_content || '';
+      // Remove any line starting with "Pronunciation:" (case-insensitive),
+      // along with surrounding blank lines.
+      const next = original
+        .split(/\r?\n/)
+        .filter((line) => !/^\s*pronunciation\s*:/i.test(line))
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+      if (next !== original) {
+        run(`UPDATE media_blocks SET text_content = ? WHERE id = ?`, [next, row.id]);
+        cleaned++;
+      }
+    }
+    if (cleaned > 0) console.log(`Stripped Pronunciation lines from ${cleaned} text blocks`);
+  } catch (e) {
+    console.warn('Pronunciation cleanup skipped:', e);
+  }
 
   console.log('Database migrated successfully');
 }

@@ -41,15 +41,58 @@ function extractSideText(side: CardSideFull): string {
     .trim();
 }
 
-// Speak arbitrary text in the selected language (for auto-read)
+// Split a long string into speakable chunks. Chrome's speechSynthesis has a
+// known bug where utterances longer than ~200 characters (or ~15 seconds) get
+// truncated. Splitting by sentence — and falling back to word splits for very
+// long sentences — keeps each utterance small enough to finish.
+function chunkForSpeech(text: string, maxLen = 180): string[] {
+  const cleaned = text.replace(/\s+/g, ' ').trim();
+  if (!cleaned) return [];
+  // Split on sentence terminators, question marks, em-dashes, and newlines.
+  const sentences = cleaned
+    .split(/(?<=[.!?…])\s+|\s+—\s+|\n+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const chunks: string[] = [];
+  for (const s of sentences) {
+    if (s.length <= maxLen) {
+      chunks.push(s);
+      continue;
+    }
+    // Long sentence — split on commas, then on word boundaries if still too long.
+    const parts = s.split(/,\s*/);
+    let buf = '';
+    for (const p of parts) {
+      if ((buf + ' ' + p).trim().length > maxLen) {
+        if (buf) chunks.push(buf.trim());
+        if (p.length > maxLen) {
+          for (let i = 0; i < p.length; i += maxLen) chunks.push(p.slice(i, i + maxLen));
+          buf = '';
+        } else {
+          buf = p;
+        }
+      } else {
+        buf = (buf + ' ' + p).trim();
+      }
+    }
+    if (buf) chunks.push(buf.trim());
+  }
+  return chunks;
+}
+
+// Speak arbitrary text in the selected language (for auto-read). Chunks the
+// text and queues each chunk as a separate utterance to dodge Chrome's bug.
 function speakPlain(text: string, lang: string) {
   if (!window.speechSynthesis || !text) return;
   window.speechSynthesis.cancel();
-  const utter = new SpeechSynthesisUtterance(text);
-  utter.lang = lang;
-  utter.rate = 0.9;
-  utter.pitch = 1;
-  window.speechSynthesis.speak(utter);
+  const chunks = chunkForSpeech(text);
+  for (const chunk of chunks) {
+    const utter = new SpeechSynthesisUtterance(chunk);
+    utter.lang = lang;
+    utter.rate = 0.9;
+    utter.pitch = 1;
+    window.speechSynthesis.speak(utter);
+  }
 }
 
 // Render markdown-style bold (**text**) as <strong> elements
