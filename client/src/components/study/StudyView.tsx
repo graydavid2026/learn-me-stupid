@@ -452,7 +452,8 @@ export function StudyView() {
     return () => window.removeEventListener('keydown', handleKey);
   }, [sessionActive, sessionComplete, flipped, currentIndex, queue]);
 
-  // Voice commands: listen for "flip card", "wrong", "correct", "end session"
+  // Voice commands: listen for "flip card", "next card", "wrong", "correct", "end session"
+  // Works on desktop Chrome AND Android Chrome. Not supported on iOS Safari or Firefox.
   useEffect(() => {
     if (!voiceCmdEnabled || !sessionActive || sessionComplete) return;
     const SR: any =
@@ -466,6 +467,12 @@ export function StudyView() {
     recog.interimResults = false;
     recog.lang = 'en-US';
     let stopped = false;
+    let restartTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const safeStart = () => {
+      if (stopped) return;
+      try { recog.start(); } catch { /* already running */ }
+    };
 
     recog.onresult = (ev: any) => {
       // Don't process commands while TTS is speaking (avoid self-triggering)
@@ -478,6 +485,8 @@ export function StudyView() {
         if (transcript.includes('end session')) {
           setSessionActive(false);
           setSessionComplete(false);
+        } else if (transcript.includes('next')) {
+          handleNextCardRef.current();
         } else if (transcript.includes('flip')) {
           setFlipped((f) => !f);
         } else if (flippedRef.current && transcript.includes('correct')) {
@@ -489,21 +498,28 @@ export function StudyView() {
     };
 
     recog.onerror = (e: any) => {
+      // Fatal errors: user denied mic, or no mic available
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
         stopped = true;
+        console.warn('Microphone permission denied for voice commands');
       }
+      // 'no-speech', 'aborted', 'audio-capture' are non-fatal — onend will restart
     };
 
     recog.onend = () => {
-      if (!stopped) {
-        try { recog.start(); } catch {}
-      }
+      // Android Chrome auto-stops after ~1s of silence — restart with a small
+      // debounce so we don't hit the spec rate limit.
+      if (stopped) return;
+      if (restartTimer) clearTimeout(restartTimer);
+      restartTimer = setTimeout(safeStart, 250);
     };
 
-    try { recog.start(); } catch {}
+    safeStart();
     return () => {
       stopped = true;
+      if (restartTimer) clearTimeout(restartTimer);
       try { recog.stop(); } catch {}
+      try { recog.abort(); } catch {}
     };
   }, [voiceCmdEnabled, sessionActive, sessionComplete]);
 
@@ -516,6 +532,19 @@ export function StudyView() {
   };
 
   const startSession = async () => {
+    // Prime mobile TTS engine — mobile browsers require a direct user gesture
+    // to unlock speechSynthesis. This silent utterance satisfies that requirement
+    // so subsequent auto-read calls from effects work on Android Chrome.
+    if (ttsEnabled && typeof window !== 'undefined' && window.speechSynthesis) {
+      try {
+        window.speechSynthesis.cancel();
+        const primer = new SpeechSynthesisUtterance(' ');
+        primer.volume = 0;
+        primer.lang = ttsLang;
+        window.speechSynthesis.speak(primer);
+      } catch {}
+    }
+
     setLoading(true);
     await runDecayCheck();
 
@@ -612,6 +641,19 @@ export function StudyView() {
   }, [currentIndex, queue, fetchTopics]);
 
   useEffect(() => { handleGradeRef.current = handleGrade; }, [handleGrade]);
+
+  const handleNextCard = useCallback(() => {
+    if (currentIndex + 1 >= queue.length) {
+      setSessionComplete(true);
+      fetchTopics();
+    } else {
+      setCurrentIndex(currentIndex + 1);
+      setFlipped(false);
+      startTime.current = Date.now();
+    }
+  }, [currentIndex, queue, fetchTopics]);
+  const handleNextCardRef = useRef(handleNextCard);
+  useEffect(() => { handleNextCardRef.current = handleNextCard; }, [handleNextCard]);
 
   const currentCard = queue[currentIndex];
 
