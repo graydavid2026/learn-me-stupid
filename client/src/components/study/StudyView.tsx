@@ -527,6 +527,8 @@ export function StudyView() {
         if (transcript.includes('end session')) {
           setSessionActive(false);
           setSessionComplete(false);
+        } else if (transcript.includes('repeat')) {
+          speakCurrentSideRef.current();
         } else if (transcript.includes('next')) {
           handleNextCardRef.current();
         } else if (transcript.includes('flip')) {
@@ -682,6 +684,15 @@ export function StudyView() {
   }, [currentIndex, queue, fetchTopics]);
 
   useEffect(() => { handleGradeRef.current = handleGrade; }, [handleGrade]);
+
+  const speakCurrentSide = useCallback(() => {
+    const card = queue[currentIndex];
+    if (!card) return;
+    const segments = extractSideSegments(flipped ? card.back : card.front);
+    if (segments.length > 0) speakCard(segments);
+  }, [queue, currentIndex, flipped]);
+  const speakCurrentSideRef = useRef(speakCurrentSide);
+  useEffect(() => { speakCurrentSideRef.current = speakCurrentSide; }, [speakCurrentSide]);
 
   const handleNextCard = useCallback(() => {
     if (currentIndex + 1 >= queue.length) {

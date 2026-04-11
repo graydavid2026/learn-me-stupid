@@ -73,6 +73,7 @@ export function SettingsView() {
         <div className="bg-surface-base rounded-lg p-3 mt-3 space-y-1.5">
           <div className="text-xs text-gray-400 mb-1 font-semibold">Commands</div>
           <div className="text-xs text-gray-300 flex justify-between"><span className="font-mono">"flip card"</span><span className="text-gray-500">show the back</span></div>
+          <div className="text-xs text-gray-300 flex justify-between"><span className="font-mono">"repeat"</span><span className="text-gray-500">read current side again</span></div>
           <div className="text-xs text-gray-300 flex justify-between"><span className="font-mono">"next card"</span><span className="text-gray-500">skip to next</span></div>
           <div className="text-xs text-gray-300 flex justify-between"><span className="font-mono">"correct"</span><span className="text-gray-500">grade correct</span></div>
           <div className="text-xs text-gray-300 flex justify-between"><span className="font-mono">"wrong"</span><span className="text-gray-500">grade wrong</span></div>
