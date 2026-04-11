@@ -366,19 +366,20 @@ function MediaBlockRenderer({ block, hasImage }: { block: MediaBlock; hasImage?:
   switch (block.block_type) {
     case 'text': {
       const text = cleanDisplayText(block.text_content || '');
-      // When card has an image, shrink text and truncate to keep card compact
+      // Shrink text automatically for longer content; no character truncation —
+      // the parent container scrolls instead.
       const textClass = hasImage
-        ? 'text-[13px] sm:text-sm leading-snug'  // smaller when image present
-        : text.length > 200
-          ? 'text-[13px] sm:text-base leading-snug'  // shrink for long text
-          : 'text-base sm:text-lg leading-relaxed';   // normal
-      const maxChars = hasImage ? 200 : 600;
-      const display = text.length > maxChars ? text.slice(0, maxChars) + '…' : text;
-      const hasMarkdown = display.includes('**');
+        ? 'text-[13px] sm:text-sm leading-snug'
+        : text.length > 400
+          ? 'text-[13px] sm:text-sm leading-snug'
+          : text.length > 200
+            ? 'text-sm sm:text-base leading-snug'
+            : 'text-base sm:text-lg leading-relaxed';
+      const hasMarkdown = text.includes('**');
       return (
-        <div>
-          <div className={`${textClass} text-gray-100 whitespace-pre-wrap`}>
-            {hasMarkdown ? renderMarkdownBold(display) : display}
+        <div className="w-full">
+          <div className={`${textClass} text-gray-100 whitespace-pre-wrap break-words`}>
+            {hasMarkdown ? renderMarkdownBold(text) : text}
           </div>
         </div>
       );
@@ -863,6 +864,32 @@ export function StudyView() {
     );
   };
 
+  // --- EMPTY SESSION (no cards matched the selected mode) ---
+  if (sessionActive && !sessionComplete && queue.length === 0) {
+    const emptyMsg =
+      mode === 'new'
+        ? 'No new cards available in this topic. Add some cards or pick a different mode.'
+        : mode === 'review'
+          ? 'Nothing due to review right now. Come back later!'
+          : 'No cards matched this study mode.';
+    return (
+      <div className="max-w-lg mx-auto text-center py-12">
+        <div className="card p-8">
+          <GraduationCap className="w-16 h-16 mx-auto mb-4 text-accent" />
+          <h2 className="text-2xl font-heading font-bold text-white mb-2">No cards to study</h2>
+          <p className="text-gray-400 mb-6">{emptyMsg}</p>
+          <button
+            onClick={() => { setSessionActive(false); }}
+            className="btn-primary flex items-center gap-2 mx-auto"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Study Menu
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // --- ACTIVE SESSION ---
   if (sessionActive && currentCard) {
     return (
@@ -905,7 +932,7 @@ export function StudyView() {
           onClick={() => setFlipped(!flipped)}
         >
           <div
-            className="relative transition-transform duration-300 ease-in-out"
+            className="relative transition-transform duration-300 ease-in-out min-h-[500px]"
             style={{
               transformStyle: 'preserve-3d',
               transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
@@ -913,7 +940,7 @@ export function StudyView() {
           >
             {/* FRONT FACE */}
             <div
-              className="card p-4 sm:p-6"
+              className="card p-4 sm:p-6 absolute inset-0 flex flex-col"
               style={{ backfaceVisibility: 'hidden' }}
             >
               {/* Top bar: slot dots + SR badge */}
@@ -931,8 +958,8 @@ export function StudyView() {
                 <SrBadge card={currentCard} />
               </div>
 
-              {/* Front content */}
-              <div className="flex flex-col items-center justify-center space-y-3 min-h-[80px]">
+              {/* Front content (scrolls if long) */}
+              <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center space-y-3 min-h-[80px]">
                 {(() => {
                   const hasImg = currentCard.front.media_blocks.some(b => b.block_type === 'image' || b.block_type === 'video');
                   return currentCard.front.media_blocks.map((block) => (
@@ -941,23 +968,23 @@ export function StudyView() {
                 })()}
               </div>
 
-              <div className="text-center mt-2">
+              <div className="text-center mt-2 shrink-0">
                 <span className="text-xs text-gray-400">tap to flip</span>
               </div>
             </div>
 
             {/* BACK FACE */}
             <div
-              className="card p-4 sm:p-6 absolute inset-0"
+              className="card p-4 sm:p-6 absolute inset-0 flex flex-col"
               style={{
                 backfaceVisibility: 'hidden',
                 transform: 'rotateY(180deg)',
               }}
             >
-              <div className="text-xs uppercase tracking-wider text-gray-500 mb-2 text-center">Answer</div>
+              <div className="text-xs uppercase tracking-wider text-gray-500 mb-2 text-center shrink-0">Answer</div>
 
-              {/* Back content */}
-              <div className="flex flex-col items-center justify-center space-y-3 min-h-[80px]">
+              {/* Back content (scrolls if long) */}
+              <div className="flex-1 overflow-y-auto flex flex-col items-start space-y-3 min-h-[80px]">
                 {(() => {
                   const hasImg = currentCard.back.media_blocks.some(b => b.block_type === 'image' || b.block_type === 'video');
                   return currentCard.back.media_blocks.map((block) => (
@@ -967,7 +994,7 @@ export function StudyView() {
               </div>
 
               {/* Correct / Wrong buttons */}
-              <div className="border-t border-border mt-3 pt-3">
+              <div className="border-t border-border mt-3 pt-3 shrink-0">
                 <div className="flex gap-3">
                   <button
                     onClick={(e) => { e.stopPropagation(); handleGrade('wrong'); }}
