@@ -32,67 +32,118 @@ function SlotDots({ slot }: { slot: number }) {
 }
 
 
-// Extract plain-text from a card side (concatenates text blocks, strips ** markers)
-function extractSideText(side: CardSideFull): string {
-  return side.media_blocks
-    .filter((b) => b.block_type === 'text' && b.text_content)
-    .map((b) => (b.text_content || '').replace(/\*\*/g, ''))
-    .join('. ')
-    .trim();
+// Extract plain-text segments from a card side for speech. Each returned item
+// is a separate line/segment so the speaker can pause between the headword and
+// the example phrase. Strips markdown bold, "Pronunciation: ..." lines, and
+// romanized transliterations in parentheses following Cyrillic text.
+function extractSideSegments(side: CardSideFull): string[] {
+  const out: string[] = [];
+  for (const b of side.media_blocks) {
+    if (b.block_type !== 'text' || !b.text_content) continue;
+    let t = b.text_content.replace(/\*\*/g, '');
+    t = t
+      .split(/\r?\n/)
+      .filter((line) => !/^\s*pronunciation\s*:/i.test(line))
+      .join('\n');
+    t = t.replace(
+      /([\u0400-\u04FF][\u0400-\u04FFёЁ'\- ]*?)\s*\(\s*[a-zA-Z][a-zA-Z'\- ]*\s*\)/g,
+      '$1'
+    );
+    for (const line of t.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (trimmed) out.push(trimmed);
+    }
+  }
+  return out;
 }
 
-// Split a long string into speakable chunks. Chrome's speechSynthesis has a
-// known bug where utterances longer than ~200 characters (or ~15 seconds) get
-// truncated. Splitting by sentence — and falling back to word splits for very
-// long sentences — keeps each utterance small enough to finish.
+function detectLang(s: string): 'ru-RU' | 'en-US' {
+  return /[\u0400-\u04FF]/.test(s) ? 'ru-RU' : 'en-US';
+}
+
+// Build an ordered plan of (lang, text) pieces. A line containing " — " or
+// " - " is split into two pieces so each side is spoken with its own language.
+function buildUtterancePlan(segments: string[]): Array<{ lang: 'ru-RU' | 'en-US'; text: string }> {
+  const plan: Array<{ lang: 'ru-RU' | 'en-US'; text: string }> = [];
+  for (const seg of segments) {
+    const parts = seg
+      .split(/\s+—\s+|\s+–\s+|\s+-\s+/)
+      .map((p) => p.replace(/^["""']+|["""']+$/g, '').trim())
+      .filter(Boolean);
+    for (const part of parts) {
+      plan.push({ lang: detectLang(part), text: part });
+    }
+  }
+  return plan;
+}
+
+// Chunk long text so Chrome's speechSynthesis doesn't truncate it (~200 char bug)
 function chunkForSpeech(text: string, maxLen = 180): string[] {
   const cleaned = text.replace(/\s+/g, ' ').trim();
   if (!cleaned) return [];
-  // Split on sentence terminators, question marks, em-dashes, and newlines.
-  const sentences = cleaned
-    .split(/(?<=[.!?…])\s+|\s+—\s+|\n+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
+  if (cleaned.length <= maxLen) return [cleaned];
+  const parts = cleaned.split(/(?<=[.!?…,])\s+/);
   const chunks: string[] = [];
-  for (const s of sentences) {
-    if (s.length <= maxLen) {
-      chunks.push(s);
-      continue;
+  let buf = '';
+  for (const p of parts) {
+    if ((buf + ' ' + p).trim().length > maxLen) {
+      if (buf) chunks.push(buf.trim());
+      buf = p;
+    } else {
+      buf = (buf + ' ' + p).trim();
     }
-    // Long sentence — split on commas, then on word boundaries if still too long.
-    const parts = s.split(/,\s*/);
-    let buf = '';
-    for (const p of parts) {
-      if ((buf + ' ' + p).trim().length > maxLen) {
-        if (buf) chunks.push(buf.trim());
-        if (p.length > maxLen) {
-          for (let i = 0; i < p.length; i += maxLen) chunks.push(p.slice(i, i + maxLen));
-          buf = '';
-        } else {
-          buf = p;
-        }
-      } else {
-        buf = (buf + ' ' + p).trim();
-      }
-    }
-    if (buf) chunks.push(buf.trim());
   }
+  if (buf) chunks.push(buf.trim());
   return chunks;
 }
 
-// Speak arbitrary text in the selected language (for auto-read). Chunks the
-// text and queues each chunk as a separate utterance to dodge Chrome's bug.
-function speakPlain(text: string, lang: string) {
-  if (!window.speechSynthesis || !text) return;
-  window.speechSynthesis.cancel();
-  const chunks = chunkForSpeech(text);
-  for (const chunk of chunks) {
-    const utter = new SpeechSynthesisUtterance(chunk);
-    utter.lang = lang;
-    utter.rate = 0.9;
-    utter.pitch = 1;
-    window.speechSynthesis.speak(utter);
+// Active TTS cancellation — clears both queued utterances and the 2s pause timer.
+let pendingTtsTimer: ReturnType<typeof setTimeout> | null = null;
+function cancelSpeech() {
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    window.speechSynthesis.cancel();
   }
+  if (pendingTtsTimer) {
+    clearTimeout(pendingTtsTimer);
+    pendingTtsTimer = null;
+  }
+}
+
+// Speak a card: auto-detect Russian vs English per segment, pause 2 seconds
+// between the headword (first segment) and the example phrase.
+function speakCard(segments: string[]) {
+  cancelSpeech();
+  if (!window.speechSynthesis || segments.length === 0) return;
+  const plan = buildUtterancePlan(segments);
+  if (plan.length === 0) return;
+
+  let entryIndex = 0;
+  const speakEntry = () => {
+    if (entryIndex >= plan.length) return;
+    const entry = plan[entryIndex++];
+    const chunks = chunkForSpeech(entry.text);
+    let chunkIdx = 0;
+    const speakNextChunk = () => {
+      if (chunkIdx >= chunks.length) {
+        // Just finished the headword (first entry) — pause 2 seconds before the phrase.
+        if (entryIndex === 1 && plan.length > 1) {
+          pendingTtsTimer = setTimeout(speakEntry, 2000);
+        } else {
+          speakEntry();
+        }
+        return;
+      }
+      const utter = new SpeechSynthesisUtterance(chunks[chunkIdx++]);
+      utter.lang = entry.lang;
+      utter.rate = 0.9;
+      utter.pitch = 1;
+      utter.onend = speakNextChunk;
+      utter.onerror = speakNextChunk;
+      window.speechSynthesis.speak(utter);
+    };
+    speakNextChunk();
+  };
+  speakEntry();
 }
 
 // Render markdown-style bold (**text**) as <strong> elements
@@ -369,7 +420,6 @@ interface SessionStats {
 export function StudyView() {
   const { selectedTopicId, topics, cardSets, fetchTopics } = useStore();
   const ttsEnabled = useStore((s) => s.ttsEnabled);
-  const ttsLang = useStore((s) => s.ttsLang);
   const voiceCmdEnabled = useStore((s) => s.voiceCmdEnabled);
   const selectedTopic = topics.find((t) => t.id === selectedTopicId);
   const [searchParams] = useSearchParams();
@@ -409,22 +459,22 @@ export function StudyView() {
     }
   }, [urlSetId]);
 
-  // Auto read-aloud: speak front when card appears, back when flipped
+  // Auto read-aloud: speak front when card appears, back when flipped.
+  // Language is auto-detected per segment (Cyrillic → Russian, else English).
   useEffect(() => {
-    if (!ttsEnabled || !sessionActive || sessionComplete) return;
+    if (!ttsEnabled || !sessionActive || sessionComplete) {
+      cancelSpeech();
+      return;
+    }
     const card = queue[currentIndex];
     if (!card) return;
-    const text = extractSideText(flipped ? card.back : card.front);
-    if (text) speakPlain(text, ttsLang);
-  }, [ttsEnabled, ttsLang, sessionActive, sessionComplete, currentIndex, flipped, queue]);
+    const segments = extractSideSegments(flipped ? card.back : card.front);
+    if (segments.length > 0) speakCard(segments);
+  }, [ttsEnabled, sessionActive, sessionComplete, currentIndex, flipped, queue]);
 
   // Stop any in-flight speech when leaving the session
   useEffect(() => {
-    return () => {
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-      }
-    };
+    return () => { cancelSpeech(); };
   }, []);
 
   // Keyboard shortcuts
@@ -532,7 +582,6 @@ export function StudyView() {
         window.speechSynthesis.cancel();
         const primer = new SpeechSynthesisUtterance(' ');
         primer.volume = 0;
-        primer.lang = ttsLang;
         window.speechSynthesis.speak(primer);
       } catch {}
     }

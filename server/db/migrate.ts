@@ -151,29 +151,34 @@ export async function migrate(): Promise<void> {
     exec(`CREATE INDEX IF NOT EXISTS idx_cards_slot ON cards(sr_slot)`);
   } catch (_) {}
 
-  // One-time cleanup: strip "Pronunciation: ..." lines from all text blocks.
+  // One-time cleanup: remove Latin romanizations from flashcards.
+  //   1. Strip "Pronunciation: ..." lines entirely
+  //   2. Strip parenthesized Latin transliterations that follow Cyrillic text
+  //      e.g. "Ключ (klyuch)" → "Ключ"
   // Idempotent — running again on already-cleaned text is a no-op.
   try {
     const rows = queryAll(
-      `SELECT id, text_content FROM media_blocks WHERE block_type = 'text' AND text_content LIKE '%Pronunciation:%'`
+      `SELECT id, text_content FROM media_blocks WHERE block_type = 'text' AND text_content IS NOT NULL`
     );
     let cleaned = 0;
     for (const row of rows) {
       const original: string = row.text_content || '';
-      // Remove any line starting with "Pronunciation:" (case-insensitive),
-      // along with surrounding blank lines.
-      const next = original
+      let next = original
         .split(/\r?\n/)
         .filter((line) => !/^\s*pronunciation\s*:/i.test(line))
-        .join('\n')
-        .replace(/\n{3,}/g, '\n\n')
-        .trim();
+        .join('\n');
+      // Strip "(latin-text)" that immediately follows a Cyrillic word.
+      next = next.replace(
+        /([\u0400-\u04FF][\u0400-\u04FFёЁ'\- ]*?)\s*\(\s*[a-zA-Z][a-zA-Z'\- ]*\s*\)/g,
+        '$1'
+      );
+      next = next.replace(/\n{3,}/g, '\n\n').replace(/[ \t]+\n/g, '\n').trim();
       if (next !== original) {
         run(`UPDATE media_blocks SET text_content = ? WHERE id = ?`, [next, row.id]);
         cleaned++;
       }
     }
-    if (cleaned > 0) console.log(`Stripped Pronunciation lines from ${cleaned} text blocks`);
+    if (cleaned > 0) console.log(`Cleaned romanized pronunciations from ${cleaned} text blocks`);
   } catch (e) {
     console.warn('Pronunciation cleanup skipped:', e);
   }

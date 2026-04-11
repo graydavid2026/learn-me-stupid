@@ -8,9 +8,7 @@ const TTS_SUPPORTED = typeof window !== 'undefined' && !!window.speechSynthesis;
 
 export function SettingsView() {
   const ttsEnabled = useStore((s) => s.ttsEnabled);
-  const ttsLang = useStore((s) => s.ttsLang);
   const setTtsEnabled = useStore((s) => s.setTtsEnabled);
-  const setTtsLang = useStore((s) => s.setTtsLang);
   const voiceCmdEnabled = useStore((s) => s.voiceCmdEnabled);
   const setVoiceCmdEnabled = useStore((s) => s.setVoiceCmdEnabled);
 
@@ -23,11 +21,14 @@ export function SettingsView() {
 
       {/* Read aloud */}
       <div className="card p-5 mb-4">
-        <div className="flex items-center gap-3 mb-3">
+        <div className="flex items-center gap-3">
           <Volume2 className={`w-5 h-5 shrink-0 ${ttsEnabled ? 'text-accent' : 'text-gray-500'}`} />
           <div className="flex-1 min-w-0">
             <div className="text-base font-medium text-white">Read cards aloud</div>
-            <div className="text-xs text-gray-500">Speaks the front when a card appears, then the back when flipped.</div>
+            <div className="text-xs text-gray-500">
+              Speaks the front when a card appears, then the back when flipped.
+              Language is detected automatically per word.
+            </div>
           </div>
           <button
             onClick={() => setTtsEnabled(!ttsEnabled)}
@@ -43,18 +44,6 @@ export function SettingsView() {
               }`}
             />
           </button>
-        </div>
-        <div>
-          <label className="text-xs text-gray-400 mb-1 block">Language</label>
-          <select
-            value={ttsLang}
-            onChange={(e) => setTtsLang(e.target.value as 'en-US' | 'es-ES' | 'ru-RU')}
-            className="input w-full text-sm"
-          >
-            <option value="en-US">English</option>
-            <option value="es-ES">Spanish</option>
-            <option value="ru-RU">Russian</option>
-          </select>
         </div>
       </div>
 
