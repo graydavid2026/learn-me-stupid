@@ -151,10 +151,10 @@ export async function migrate(): Promise<void> {
     exec(`CREATE INDEX IF NOT EXISTS idx_cards_slot ON cards(sr_slot)`);
   } catch (_) {}
 
-  // One-time cleanup: remove Latin romanizations from flashcards.
+  // One-time cleanup: remove pronunciation clutter from flashcards.
   //   1. Strip "Pronunciation: ..." lines entirely
-  //   2. Strip parenthesized Latin transliterations that follow Cyrillic text
-  //      e.g. "Ключ (klyuch)" → "Ключ"
+  //   2. Strip any parenthesized annotations (romanizations like "(klyuch)",
+  //      part-of-speech tags like "(noun/adj)", etc.)
   // Idempotent — running again on already-cleaned text is a no-op.
   try {
     const rows = queryAll(
@@ -167,18 +167,14 @@ export async function migrate(): Promise<void> {
         .split(/\r?\n/)
         .filter((line) => !/^\s*pronunciation\s*:/i.test(line))
         .join('\n');
-      // Strip "(latin-text)" that immediately follows a Cyrillic word.
-      next = next.replace(
-        /([\u0400-\u04FF][\u0400-\u04FFёЁ'\- ]*?)\s*\(\s*[a-zA-Z][a-zA-Z'\- ]*\s*\)/g,
-        '$1'
-      );
+      next = next.replace(/\s*\([^)]*\)/g, '');
       next = next.replace(/\n{3,}/g, '\n\n').replace(/[ \t]+\n/g, '\n').trim();
       if (next !== original) {
         run(`UPDATE media_blocks SET text_content = ? WHERE id = ?`, [next, row.id]);
         cleaned++;
       }
     }
-    if (cleaned > 0) console.log(`Cleaned romanized pronunciations from ${cleaned} text blocks`);
+    if (cleaned > 0) console.log(`Cleaned parenthetical annotations from ${cleaned} text blocks`);
   } catch (e) {
     console.warn('Pronunciation cleanup skipped:', e);
   }

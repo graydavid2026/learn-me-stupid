@@ -45,10 +45,9 @@ function extractSideSegments(side: CardSideFull): string[] {
       .split(/\r?\n/)
       .filter((line) => !/^\s*pronunciation\s*:/i.test(line))
       .join('\n');
-    t = t.replace(
-      /([\u0400-\u04FF][\u0400-\u04FFёЁ'\- ]*?)\s*\(\s*[a-zA-Z][a-zA-Z'\- ]*\s*\)/g,
-      '$1'
-    );
+    // Strip all parenthesized annotations (romanizations, part-of-speech tags,
+    // etc.) — e.g. "Ключ (klyuch)" → "Ключ", "Heuristic (noun/adj)" → "Heuristic"
+    t = t.replace(/\s*\([^)]*\)/g, '');
     for (const line of t.split(/\r?\n/)) {
       const trimmed = line.trim();
       if (trimmed) out.push(trimmed);
