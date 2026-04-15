@@ -1,10 +1,12 @@
 node_modules/
 dist/
-# Allow db and uploads to be baked into image with flashcard data
-# server/db/*.db
-# server/uploads/*
+# DB lives on an Azure Files volume mounted at /app/server/db — never
+# bake any *.db into the image or rebuilds would overwrite prod progress.
+server/db/*.db
+server/db/*.db-journal
 .git
 .env
 *.log
 .DS_Store
 tasks/
+learn-me-stupid-backups/

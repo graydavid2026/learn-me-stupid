@@ -1,8 +1,9 @@
 node_modules/
 dist/
-# Track db and uploads for production data
-# server/uploads/*
-# server/db/*.db
+# DB is kept out of git — prod lives on Azure Files volume, local dev
+# lives in the docker-compose `db-data` volume. Backups go in a sibling dir.
+server/db/*.db
+server/db/*.db-journal
 .env
 *.log
 .DS_Store

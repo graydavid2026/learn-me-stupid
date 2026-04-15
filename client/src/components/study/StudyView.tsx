@@ -1091,7 +1091,6 @@ export function StudyView() {
 
       <TrancheDashboard
         dailyNewCardLimit={dailyNewCardLimit}
-        onStartAllDue={() => { setMode('review'); startSession(undefined, 'review'); }}
         onStartSelected={(ids) => startSession(ids)}
       />
 

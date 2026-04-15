@@ -8,6 +8,15 @@ const SLOT_COLORS: Record<number, string> = {
   12: '#8b5cf6', 13: '#a855f7',
 };
 
+const SLOT_LABELS: Record<number, string> = {
+  0: 'New', 1: '5m', 2: '1h', 3: '4h', 4: '1d', 5: '2d', 6: '1w',
+  7: '2w', 8: '4w', 9: '8w', 10: '3mo', 11: '6mo', 12: '9mo', 13: '1yr',
+};
+
+// Slots shown in the timeline. We skip slot 0 ("New") since anything before
+// 5 minutes isn't useful to surface in the tranche strip.
+const TIMELINE_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+
 type Chip = {
   id: string;
   slot: number;
@@ -34,7 +43,6 @@ type Dashboard = {
 
 interface Props {
   dailyNewCardLimit: number;
-  onStartAllDue: () => void;
   onStartSelected: (cardIds: string[]) => void;
 }
 
@@ -61,7 +69,7 @@ function formatAbsolute(d: Date): string {
   });
 }
 
-export function TrancheDashboard({ dailyNewCardLimit, onStartAllDue, onStartSelected }: Props) {
+export function TrancheDashboard({ dailyNewCardLimit, onStartSelected }: Props) {
   const [data, setData] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -175,13 +183,22 @@ export function TrancheDashboard({ dailyNewCardLimit, onStartAllDue, onStartSele
         </div>
       </div>
 
-      {/* Tranche timeline */}
-      {tranches.length === 0 ? (
-        <div className="card p-12 text-center">
-          <div className="text-gray-400 text-lg">Nothing due right now.</div>
-          <div className="text-gray-600 text-sm mt-1">Come back later or study upcoming cards early.</div>
-        </div>
-      ) : (
+      {/* Tranche timeline — always rendered, one column per slot 1–13 */}
+      {(() => {
+        const bySlot = new Map<number, Tranche>();
+        for (const t of tranches) bySlot.set(t.slot, t);
+        const displayTranches: Tranche[] = TIMELINE_SLOTS.map(
+          (slot) =>
+            bySlot.get(slot) ?? {
+              slot,
+              label: SLOT_LABELS[slot],
+              dueCount: 0,
+              dueIn24hCount: 0,
+              soonestDueAt: null,
+              cards: [],
+            }
+        );
+        return (
         <div
           ref={scrollRef}
           onMouseDown={onMouseDown}
@@ -192,7 +209,7 @@ export function TrancheDashboard({ dailyNewCardLimit, onStartAllDue, onStartSele
           style={{ scrollbarWidth: 'thin' }}
         >
           <div className="flex gap-3 items-start min-w-min">
-            {tranches.map((t) => {
+            {displayTranches.map((t) => {
               const isOpen = expanded.has(t.slot);
               const color = SLOT_COLORS[t.slot] ?? '#6b7280';
               const soonest = parseServerDate(t.soonestDueAt);
@@ -285,37 +302,30 @@ export function TrancheDashboard({ dailyNewCardLimit, onStartAllDue, onStartSele
             })}
           </div>
         </div>
-      )}
+        );
+      })()}
 
-      {/* Sticky action bar */}
-      <div className="fixed bottom-0 left-0 right-0 md:left-64 bg-surface-base/95 backdrop-blur border-t border-border p-3 z-30">
-        <div className="max-w-6xl mx-auto flex items-center gap-3">
-          {selectedCount > 0 ? (
-            <>
-              <button
-                onClick={clearSelected}
-                className="text-sm text-gray-400 hover:text-white px-3 py-2"
-              >
-                Clear
-              </button>
-              <button
-                onClick={() => onStartSelected(Array.from(selected))}
-                className="btn-primary flex-1 py-3 text-base"
-              >
-                Study selected ({selectedCount})
-              </button>
-            </>
-          ) : (
+      {/* Sticky action bar — only when cards are selected. The launcher's
+          "Start Studying" button handles the default all-due case, so we
+          don't show a second, buried button beneath it. */}
+      {selectedCount > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 md:left-64 bg-surface-base/95 backdrop-blur border-t border-border p-3 z-30">
+          <div className="max-w-6xl mx-auto flex items-center gap-3">
             <button
-              onClick={onStartAllDue}
-              disabled={totals.dueNow === 0}
-              className="btn-primary flex-1 py-3 text-base disabled:opacity-40"
+              onClick={clearSelected}
+              className="text-sm text-gray-400 hover:text-white px-3 py-2"
             >
-              Review all due ({totals.dueNow})
+              Clear
             </button>
-          )}
+            <button
+              onClick={() => onStartSelected(Array.from(selected))}
+              className="btn-primary flex-1 py-3 text-base"
+            >
+              Study selected ({selectedCount})
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

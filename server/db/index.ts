@@ -4,7 +4,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = path.join(__dirname, 'mnemonic.db');
+// DB path is overridable via env var so production can point at a mounted
+// Azure Files volume (e.g. /app/data/mnemonic.db) without the mount
+// clobbering source .ts files that live alongside the default location.
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'mnemonic.db');
 
 let db: Database | null = null;
 let initPromise: Promise<Database> | null = null;
