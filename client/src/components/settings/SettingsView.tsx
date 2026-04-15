@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Volume2, Mic, Settings as SettingsIcon, AlertTriangle, Sparkles, Copy, Check } from 'lucide-react';
+import { Volume2, Mic, Settings as SettingsIcon, AlertTriangle, Sparkles, Copy, Check, Shuffle } from 'lucide-react';
 import { useStore } from '../../stores/useStore';
 
 const SR_SUPPORTED =
@@ -14,6 +14,8 @@ export function SettingsView() {
   const setVoiceCmdEnabled = useStore((s) => s.setVoiceCmdEnabled);
   const topics = useStore((s) => s.topics);
   const fetchTopics = useStore((s) => s.fetchTopics);
+  const newCardOrder = useStore((s) => s.newCardOrder);
+  const setNewCardOrder = useStore((s) => s.setNewCardOrder);
 
   const [copiedTopicId, setCopiedTopicId] = useState<string | null>(null);
   const [loadingTopicId, setLoadingTopicId] = useState<string | null>(null);
@@ -123,6 +125,61 @@ export function SettingsView() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* New-card draw order per topic */}
+      <div className="card p-5 mb-4">
+        <div className="flex items-center gap-3 mb-3">
+          <Shuffle className="w-5 h-5 shrink-0 text-accent" />
+          <div className="flex-1 min-w-0">
+            <div className="text-base font-medium text-white">New card order</div>
+            <div className="text-xs text-gray-500">
+              Choose how "Learn New" picks cards for each topic. Random samples
+              across your whole new-card pool; In Order uses the sequence you
+              created cards in.
+            </div>
+          </div>
+        </div>
+        <div className="space-y-2">
+          {topics.length === 0 && (
+            <div className="text-xs text-gray-500 italic">No topics yet.</div>
+          )}
+          {topics.map((t) => {
+            const current = newCardOrder[t.id] || 'entered';
+            return (
+              <div
+                key={t.id}
+                className="flex items-center justify-between gap-3 bg-surface-base border border-border rounded-lg px-3 py-2"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm text-white truncate">{t.name}</div>
+                </div>
+                <div className="inline-flex rounded-lg border border-border overflow-hidden shrink-0">
+                  <button
+                    onClick={() => setNewCardOrder(t.id, 'entered')}
+                    className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                      current === 'entered'
+                        ? 'bg-accent/20 text-accent'
+                        : 'bg-surface-elevated text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    In Order
+                  </button>
+                  <button
+                    onClick={() => setNewCardOrder(t.id, 'random')}
+                    className={`px-3 py-1.5 text-xs font-medium transition-colors border-l border-border ${
+                      current === 'random'
+                        ? 'bg-accent/20 text-accent'
+                        : 'bg-surface-elevated text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    Random
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* Card-generation prompts per topic */}

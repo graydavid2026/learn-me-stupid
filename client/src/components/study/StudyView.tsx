@@ -434,6 +434,7 @@ export function StudyView() {
   const { selectedTopicId, topics, cardSets, fetchTopics } = useStore();
   const ttsEnabled = useStore((s) => s.ttsEnabled);
   const voiceCmdEnabled = useStore((s) => s.voiceCmdEnabled);
+  const newCardOrder = useStore((s) => s.newCardOrder);
   const selectedTopic = topics.find((t) => t.id === selectedTopicId);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -448,6 +449,11 @@ export function StudyView() {
   const [sessionActive, setSessionActive] = useState(false);
   const [sessionComplete, setSessionComplete] = useState(false);
   const [stats, setStats] = useState<SessionStats>({ total: 0, reviewed: 0, correct: 0, wrong: 0, slotChanges: [] });
+  // Card IDs the user answered wrong in the current session. Used so "Study
+  // Again" can re-drill exactly those cards instead of fetching a fresh batch
+  // (which would skip them, since a wrong answer on a new card promotes it to
+  // slot 1 and it no longer matches mode=new).
+  const [wrongCardIds, setWrongCardIds] = useState<string[]>([]);
   const [filterSetId, setFilterSetId] = useState<string>(urlSetId || '');
   const startTime = useRef<number>(0);
   const autoStarted = useRef(false);
@@ -603,7 +609,7 @@ export function StudyView() {
     }
   };
 
-  const startSession = async () => {
+  const startSession = async (redrillIds?: string[]) => {
     // Prime mobile TTS engine — mobile browsers require a direct user gesture
     // to unlock speechSynthesis. This silent utterance satisfies that requirement
     // so subsequent auto-read calls from effects work on Android Chrome.
@@ -624,7 +630,14 @@ export function StudyView() {
     if (filterSetId) params.set('set', filterSetId);
 
     let url: string;
-    if (mode === 'pipeline') {
+    if (redrillIds && redrillIds.length > 0) {
+      // Re-drill specific cards by id (e.g. "Study Again" after missing some).
+      const idParams = new URLSearchParams();
+      idParams.set('ids', redrillIds.join(','));
+      url = '/api/study/due?' + idParams.toString();
+      // Clear other params since id-fetch ignores them server-side anyway.
+      params.forEach((_v, k) => params.delete(k));
+    } else if (mode === 'pipeline') {
       url = '/api/study/pipeline?limit=20&';
     } else if (mode === 'review') {
       params.set('mode', 'review');
@@ -632,10 +645,14 @@ export function StudyView() {
     } else if (mode === 'new') {
       params.set('mode', 'new');
       params.set('limit', '2');
+      const order = selectedTopicId ? newCardOrder[selectedTopicId] : undefined;
+      if (order === 'random') params.set('order', 'random');
       url = '/api/study/due?';
     } else if (mode === 'mixed') {
       params.set('mode', 'mixed');
       params.set('limit', '2');
+      const order = selectedTopicId ? newCardOrder[selectedTopicId] : undefined;
+      if (order === 'random') params.set('order', 'random');
       url = '/api/study/due?';
     } else {
       // focus mode — use legacy (all due for the set)
@@ -658,6 +675,7 @@ export function StudyView() {
       setSessionActive(true);
       setSessionComplete(false);
       setStats({ total: cards.length, reviewed: 0, correct: 0, wrong: 0, slotChanges: [] });
+      setWrongCardIds([]);
       startTime.current = Date.now();
     } catch (err) {
       console.error('Failed to start session:', err);
@@ -681,6 +699,12 @@ export function StudyView() {
 
       if (res.ok) {
         const data = await res.json();
+        if (result === 'wrong') {
+          setWrongCardIds((prev) => (prev.includes(card.id) ? prev : [...prev, card.id]));
+        } else {
+          // Got it right on a re-drill — remove from the wrong list.
+          setWrongCardIds((prev) => prev.filter((id) => id !== card.id));
+        }
         setStats((prev) => ({
           ...prev,
           reviewed: prev.reviewed + 1,
@@ -817,9 +841,12 @@ export function StudyView() {
             <button onClick={() => { setSessionActive(false); setSessionComplete(false); }} className="btn-secondary">
               Study Menu
             </button>
-            <button onClick={startSession} className="btn-primary flex items-center gap-2">
+            <button
+              onClick={() => startSession(wrongCardIds.length > 0 ? wrongCardIds : undefined)}
+              className="btn-primary flex items-center gap-2"
+            >
               <RotateCcw className="w-4 h-4" />
-              Study Again
+              {wrongCardIds.length > 0 ? `Redo ${wrongCardIds.length} Wrong` : 'Study Again'}
             </button>
           </div>
         </div>
@@ -1083,7 +1110,7 @@ export function StudyView() {
       )}
 
       <button
-        onClick={startSession}
+        onClick={() => startSession()}
         disabled={loading}
         className="btn-primary w-full py-3 text-lg flex items-center justify-center gap-2"
       >

@@ -91,6 +91,11 @@ interface AppState {
   voiceCmdEnabled: boolean;
   setVoiceCmdEnabled: (enabled: boolean) => void;
 
+  // Per-topic new-card draw order. 'entered' = created_at ASC, 'random' = RANDOM().
+  // Missing entries default to 'entered'.
+  newCardOrder: Record<string, 'random' | 'entered'>;
+  setNewCardOrder: (topicId: string, order: 'random' | 'entered') => void;
+
   // Topic actions
   fetchTopics: () => Promise<void>;
   selectTopic: (id: string | null) => void;
@@ -146,6 +151,20 @@ export const useStore = create<AppState>((set, get) => ({
   setVoiceCmdEnabled: (enabled) => {
     try { localStorage.setItem('lms.voiceCmdEnabled', enabled ? '1' : '0'); } catch {}
     set({ voiceCmdEnabled: enabled });
+  },
+
+  newCardOrder: (() => {
+    try {
+      const raw = localStorage.getItem('lms.newCardOrder');
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch { return {}; }
+  })(),
+  setNewCardOrder: (topicId, order) => {
+    const next = { ...get().newCardOrder, [topicId]: order };
+    try { localStorage.setItem('lms.newCardOrder', JSON.stringify(next)); } catch {}
+    set({ newCardOrder: next });
   },
 
   fetchTopics: async () => {

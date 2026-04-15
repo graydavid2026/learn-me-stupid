@@ -54,8 +54,24 @@ function getFullCard(cardId: string) {
 // (no mode)     — legacy: all due cards (review + new)
 router.get('/due', (req, res) => {
   try {
-    const { topic, set, tags, slotMin, slotMax, mode, limit } = req.query;
+    const { topic, set, tags, slotMin, slotMax, mode, limit, order, ids } = req.query;
     const newCardLimit = Number(limit) || 10;
+
+    // ids=a,b,c — fetch specific cards by id regardless of SR state.
+    // Used by "Study Again" to re-drill cards just answered wrong, which
+    // have already been promoted to slot 1 by processReview().
+    if (ids && typeof ids === 'string') {
+      const idList = ids.split(',').map((s) => s.trim()).filter(Boolean);
+      if (idList.length === 0) return res.json([]);
+      const placeholders = idList.map(() => '?').join(',');
+      const rows = queryAll(
+        `SELECT * FROM cards WHERE id IN (${placeholders})`,
+        idList
+      );
+      const byId = new Map(rows.map((r: any) => [r.id, r]));
+      const ordered = idList.map((id) => byId.get(id)).filter(Boolean);
+      return res.json(ordered.map((c: any) => getFullCard(c.id)).filter(Boolean));
+    }
 
     let sql = `
       SELECT c.* FROM cards c
@@ -93,7 +109,11 @@ router.get('/due', (req, res) => {
     }
 
     if (mode === 'new') {
-      sql += ' ORDER BY c.created_at ASC LIMIT ?';
+      // Random sampling across the full new-card pool so a small limit
+      // (e.g. 2) doesn't keep drawing the same alphabetically-earliest cards.
+      sql += order === 'random'
+        ? ' ORDER BY RANDOM() LIMIT ?'
+        : ' ORDER BY c.created_at ASC LIMIT ?';
       params.push(newCardLimit);
     } else {
       sql += ' ORDER BY c.sr_slot ASC, c.sr_next_due_at ASC';
