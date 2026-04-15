@@ -91,6 +91,9 @@ interface AppState {
   voiceCmdEnabled: boolean;
   setVoiceCmdEnabled: (enabled: boolean) => void;
 
+  dailyNewCardLimit: number;
+  setDailyNewCardLimit: (n: number) => void;
+
   // Per-topic new-card draw order. 'entered' = created_at ASC, 'random' = RANDOM().
   // Missing entries default to 'entered'.
   newCardOrder: Record<string, 'random' | 'entered'>;
@@ -151,6 +154,19 @@ export const useStore = create<AppState>((set, get) => ({
   setVoiceCmdEnabled: (enabled) => {
     try { localStorage.setItem('lms.voiceCmdEnabled', enabled ? '1' : '0'); } catch {}
     set({ voiceCmdEnabled: enabled });
+  },
+
+  dailyNewCardLimit: (() => {
+    try {
+      const raw = localStorage.getItem('lms.dailyNewCardLimit');
+      const n = raw == null ? 2 : Number(raw);
+      return Number.isFinite(n) && n >= 0 ? n : 2;
+    } catch { return 2; }
+  })(),
+  setDailyNewCardLimit: (n) => {
+    const clamped = Math.max(0, Math.min(20, Math.floor(n)));
+    try { localStorage.setItem('lms.dailyNewCardLimit', String(clamped)); } catch {}
+    set({ dailyNewCardLimit: clamped });
   },
 
   newCardOrder: (() => {

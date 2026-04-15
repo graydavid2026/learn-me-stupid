@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Volume2, Mic, Settings as SettingsIcon, AlertTriangle, Sparkles, Copy, Check, Shuffle } from 'lucide-react';
+import { Volume2, Mic, Settings as SettingsIcon, AlertTriangle, Sparkles, Copy, Check, Shuffle, GraduationCap } from 'lucide-react';
 import { useStore } from '../../stores/useStore';
 
 const SR_SUPPORTED =
@@ -12,6 +12,8 @@ export function SettingsView() {
   const setTtsEnabled = useStore((s) => s.setTtsEnabled);
   const voiceCmdEnabled = useStore((s) => s.voiceCmdEnabled);
   const setVoiceCmdEnabled = useStore((s) => s.setVoiceCmdEnabled);
+  const dailyNewCardLimit = useStore((s) => s.dailyNewCardLimit);
+  const setDailyNewCardLimit = useStore((s) => s.setDailyNewCardLimit);
   const topics = useStore((s) => s.topics);
   const fetchTopics = useStore((s) => s.fetchTopics);
   const newCardOrder = useStore((s) => s.newCardOrder);
@@ -71,6 +73,28 @@ export function SettingsView() {
               }`}
             />
           </button>
+        </div>
+      </div>
+
+      {/* Daily new-card limit */}
+      <div className="card p-5 mb-4">
+        <div className="flex items-center gap-3">
+          <GraduationCap className="w-5 h-5 shrink-0 text-accent" />
+          <div className="flex-1 min-w-0">
+            <div className="text-base font-medium text-white">New cards per day</div>
+            <div className="text-xs text-gray-500">
+              Cap how many brand-new cards you'll learn in a day across all topics. When the cap is hit, the
+              study session asks you to review upcoming cards early instead.
+            </div>
+          </div>
+          <input
+            type="number"
+            min={0}
+            max={20}
+            value={dailyNewCardLimit}
+            onChange={(e) => setDailyNewCardLimit(Number(e.target.value))}
+            className="w-20 bg-surface-base border border-border rounded-lg px-3 py-2 text-white text-center text-lg font-mono focus:outline-none focus:border-accent"
+          />
         </div>
       </div>
 

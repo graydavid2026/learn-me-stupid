@@ -18,6 +18,41 @@ function genId(): string {
   return uuid().replace(/-/g, '').slice(0, 16);
 }
 
+// Start of "today" in America/Indiana/Indianapolis, as a SQLite-friendly
+// UTC datetime string ("YYYY-MM-DD HH:MM:SS"). Used so the daily new-card
+// budget rolls over at local midnight regardless of server tz.
+function indyDayStartUtc(): string {
+  const dateFmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Indiana/Indianapolis',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  const hourFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Indiana/Indianapolis', hour: '2-digit', hour12: false,
+  });
+  const indyToday = dateFmt.format(new Date()); // "2026-04-15"
+  for (const offset of ['-04:00', '-05:00']) {
+    const candidate = new Date(`${indyToday}T00:00:00${offset}`);
+    if (dateFmt.format(candidate) === indyToday && hourFmt.format(candidate) === '00') {
+      return candidate.toISOString().replace('T', ' ').slice(0, 19);
+    }
+  }
+  return new Date().toISOString().slice(0, 10) + ' 00:00:00';
+}
+
+// How many slot-0 cards have been promoted past slot 0 today (Indy tz).
+// Wrong answers on a New card don't count — the card never advanced.
+function newCardsLearnedToday(): number {
+  const cutoff = indyDayStartUtc();
+  const row = queryOne(
+    `SELECT COUNT(*) as count FROM review_log
+     WHERE reviewed_at >= ?
+       AND slot_before = 0
+       AND slot_after > 0`,
+    [cutoff]
+  );
+  return row?.count || 0;
+}
+
 // Helper: get full card with sides and media blocks
 function getFullCard(cardId: string) {
   const card = queryOne('SELECT * FROM cards WHERE id = ?', [cardId]);
@@ -54,8 +89,17 @@ function getFullCard(cardId: string) {
 // (no mode)     — legacy: all due cards (review + new)
 router.get('/due', (req, res) => {
   try {
-    const { topic, set, tags, slotMin, slotMax, mode, limit, order, ids } = req.query;
-    const newCardLimit = Number(limit) || 10;
+    const { topic, set, tags, slotMin, slotMax, mode, limit, order, ids, dailyNewLimit } = req.query;
+    const requestedNewLimit = Number(limit) || 10;
+    // Daily cap from Settings — caller passes ?dailyNewLimit=N.
+    // The effective new-card budget is min(requested batch, daily cap remaining).
+    let newCardLimit = requestedNewLimit;
+    if (dailyNewLimit !== undefined) {
+      const dailyCap = Math.max(0, Number(dailyNewLimit));
+      const used = newCardsLearnedToday();
+      const remaining = Math.max(0, dailyCap - used);
+      newCardLimit = Math.min(requestedNewLimit, remaining);
+    }
 
     // ids=a,b,c — fetch specific cards by id regardless of SR state.
     // Used by "Study Again" to re-drill cards just answered wrong, which
@@ -773,6 +817,98 @@ router.get('/topic-dashboard/:topicId', (req, res) => {
   } catch (err) {
     console.error('Error fetching topic dashboard:', err);
     res.status(500).json({ error: 'Failed to fetch topic dashboard' });
+  }
+});
+
+// GET /api/study/tranche-dashboard — Due cards grouped by SR slot, with the
+// chip-level data the Study tab dashboard needs. Only tranches with at least
+// one due card are returned; only DUE cards are returned. Cards are sorted
+// oldest due_at first within each tranche.
+router.get('/tranche-dashboard', (_req, res) => {
+  try {
+    const rows = queryAll(
+      `SELECT c.id, c.sr_slot, c.sr_next_due_at, c.sr_last_reviewed_at,
+              (SELECT result FROM review_log
+                WHERE card_id = c.id
+                ORDER BY reviewed_at DESC LIMIT 1) as last_result
+         FROM cards c
+        WHERE c.sr_is_active = 1
+          AND c.sr_slot > 0
+          AND c.sr_next_due_at IS NOT NULL
+          AND c.sr_next_due_at <= datetime('now')
+        ORDER BY c.sr_slot ASC, c.sr_next_due_at ASC`,
+      []
+    );
+
+    const now = Date.now();
+    const in24h = now + 24 * 60 * 60 * 1000;
+
+    type Chip = {
+      id: string;
+      slot: number;
+      due_at: string;
+      last_reviewed_at: string | null;
+      last_result: 'correct' | 'wrong' | null;
+    };
+    const bySlot = new Map<number, Chip[]>();
+    let dueIn24hTotal = 0;
+    let lastStudiedAt: string | null = null;
+
+    for (const r of rows as any[]) {
+      const chip: Chip = {
+        id: r.id,
+        slot: r.sr_slot,
+        due_at: r.sr_next_due_at,
+        last_reviewed_at: r.sr_last_reviewed_at || null,
+        last_result: r.last_result || null,
+      };
+      if (!bySlot.has(r.sr_slot)) bySlot.set(r.sr_slot, []);
+      bySlot.get(r.sr_slot)!.push(chip);
+      const dueMs = new Date(r.sr_next_due_at + 'Z').getTime();
+      if (dueMs <= in24h) dueIn24hTotal++;
+      if (r.sr_last_reviewed_at && (!lastStudiedAt || r.sr_last_reviewed_at > lastStudiedAt)) {
+        lastStudiedAt = r.sr_last_reviewed_at;
+      }
+    }
+
+    const trancheLabels = SLOT_LABELS as Record<number, string>;
+    const tranches = Array.from(bySlot.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([slot, cards]) => {
+        const dueIn24hCount = cards.filter(
+          (c) => new Date(c.due_at + 'Z').getTime() <= in24h
+        ).length;
+        return {
+          slot,
+          label: trancheLabels[slot] ?? `Slot ${slot}`,
+          dueCount: cards.length,
+          dueIn24hCount,
+          soonestDueAt: cards[0]?.due_at ?? null,
+          cards,
+        };
+      });
+
+    // Pool of slot-0 cards still available to introduce (independent of daily cap).
+    const newPoolRow = queryOne(
+      `SELECT COUNT(*) as count FROM cards WHERE sr_is_active = 1 AND sr_slot = 0`,
+      []
+    );
+
+    res.json({
+      tranches,
+      totals: {
+        dueNow: rows.length,
+        dueIn24h: dueIn24hTotal,
+      },
+      newToday: {
+        used: newCardsLearnedToday(),
+        available: newPoolRow?.count || 0,
+      },
+      lastStudiedAt,
+    });
+  } catch (err) {
+    console.error('Error fetching tranche dashboard:', err);
+    res.status(500).json({ error: 'Failed to fetch tranche dashboard' });
   }
 });
 

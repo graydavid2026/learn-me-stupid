@@ -3,6 +3,7 @@ import { GraduationCap, RotateCcw, Check, X, ChevronRight, Play, Filter, Zap, Cl
 import { useStore, CardFull, MediaBlock, CardSideFull } from '../../stores/useStore';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ImageLightbox, HotspotImage, parseHotspotData } from './ImageViewer';
+import { TrancheDashboard } from './TrancheDashboard';
 
 const SLOT_COLORS: Record<number, string> = {
   0: '#6b7280', 1: '#ef4444', 2: '#f97316', 3: '#f59e0b',
@@ -435,6 +436,7 @@ export function StudyView() {
   const ttsEnabled = useStore((s) => s.ttsEnabled);
   const voiceCmdEnabled = useStore((s) => s.voiceCmdEnabled);
   const newCardOrder = useStore((s) => s.newCardOrder);
+  const dailyNewCardLimit = useStore((s) => s.dailyNewCardLimit);
   const selectedTopic = topics.find((t) => t.id === selectedTopicId);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -609,7 +611,8 @@ export function StudyView() {
     }
   };
 
-  const startSession = async (redrillIds?: string[]) => {
+  const startSession = async (redrillIds?: string[], modeOverride?: StudyMode) => {
+    const effectiveMode = modeOverride ?? mode;
     // Prime mobile TTS engine — mobile browsers require a direct user gesture
     // to unlock speechSynthesis. This silent utterance satisfies that requirement
     // so subsequent auto-read calls from effects work on Android Chrome.
@@ -637,20 +640,22 @@ export function StudyView() {
       url = '/api/study/due?' + idParams.toString();
       // Clear other params since id-fetch ignores them server-side anyway.
       params.forEach((_v, k) => params.delete(k));
-    } else if (mode === 'pipeline') {
+    } else if (effectiveMode === 'pipeline') {
       url = '/api/study/pipeline?limit=20&';
-    } else if (mode === 'review') {
+    } else if (effectiveMode === 'review') {
       params.set('mode', 'review');
       url = '/api/study/due?';
-    } else if (mode === 'new') {
+    } else if (effectiveMode === 'new') {
       params.set('mode', 'new');
-      params.set('limit', '2');
+      params.set('limit', String(dailyNewCardLimit));
+      params.set('dailyNewLimit', String(dailyNewCardLimit));
       const order = selectedTopicId ? newCardOrder[selectedTopicId] : undefined;
       if (order === 'random') params.set('order', 'random');
       url = '/api/study/due?';
-    } else if (mode === 'mixed') {
+    } else if (effectiveMode === 'mixed') {
       params.set('mode', 'mixed');
-      params.set('limit', '2');
+      params.set('limit', String(dailyNewCardLimit));
+      params.set('dailyNewLimit', String(dailyNewCardLimit));
       const order = selectedTopicId ? newCardOrder[selectedTopicId] : undefined;
       if (order === 'random') params.set('order', 'random');
       url = '/api/study/due?';
@@ -1056,16 +1061,22 @@ export function StudyView() {
 
   // --- SESSION LAUNCHER ---
   return (
-    <div className="max-w-xl mx-auto">
-      <div className="text-center mb-8">
-        <GraduationCap className="w-12 h-12 mx-auto mb-3 text-accent" />
-        <h2 className="text-2xl font-heading font-bold text-white">
-          Study Session
-        </h2>
-        <p className="text-gray-400 mt-1">
-          {selectedTopic ? `Studying: ${selectedTopic.name}` : 'Select a topic above to filter, or study all'}
+    <div className="max-w-6xl mx-auto">
+      <div className="text-center mb-6">
+        <GraduationCap className="w-10 h-10 mx-auto mb-2 text-accent" />
+        <h2 className="text-2xl font-heading font-bold text-white">Study Session</h2>
+        <p className="text-gray-400 mt-1 text-sm">
+          {selectedTopic ? `Filtered: ${selectedTopic.name}` : 'Tap a tranche to expand, tap cards to select'}
         </p>
       </div>
+
+      <TrancheDashboard
+        dailyNewCardLimit={dailyNewCardLimit}
+        onStartAllDue={() => { setMode('review'); startSession(undefined, 'review'); }}
+        onStartSelected={(ids) => startSession(ids)}
+      />
+
+      <div className="border-t border-border my-6" />
 
       {/* Mode Selection */}
       <div className="grid grid-cols-2 gap-3 mb-6">
