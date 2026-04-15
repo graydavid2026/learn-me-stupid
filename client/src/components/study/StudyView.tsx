@@ -695,6 +695,25 @@ export function StudyView() {
 
     const responseTime = Date.now() - startTime.current;
 
+    // "Ahead of schedule" is a sandbox — never persists. No /review call,
+    // no SR slot change, no review_log row, no daily new-card budget impact.
+    if (mode === 'pipeline') {
+      setStats((prev) => ({
+        ...prev,
+        reviewed: prev.reviewed + 1,
+        correct: prev.correct + (result === 'correct' ? 1 : 0),
+        wrong: prev.wrong + (result === 'wrong' ? 1 : 0),
+      }));
+      if (currentIndex + 1 >= queue.length) {
+        setSessionComplete(true);
+      } else {
+        setCurrentIndex(currentIndex + 1);
+        setFlipped(false);
+        startTime.current = Date.now();
+      }
+      return;
+    }
+
     try {
       const res = await fetch('/api/study/review', {
         method: 'POST',
@@ -738,7 +757,7 @@ export function StudyView() {
       setFlipped(false);
       startTime.current = Date.now();
     }
-  }, [currentIndex, queue, fetchTopics]);
+  }, [currentIndex, queue, fetchTopics, mode]);
 
   useEffect(() => { handleGradeRef.current = handleGrade; }, [handleGrade]);
 
@@ -1061,7 +1080,7 @@ export function StudyView() {
 
   // --- SESSION LAUNCHER ---
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="max-w-6xl mx-auto pb-40">
       <div className="text-center mb-6">
         <GraduationCap className="w-10 h-10 mx-auto mb-2 text-accent" />
         <h2 className="text-2xl font-heading font-bold text-white">Study Session</h2>
@@ -1082,10 +1101,8 @@ export function StudyView() {
       <div className="grid grid-cols-2 gap-3 mb-6">
         {[
           { id: 'review' as StudyMode, label: 'Review Due', desc: 'Cards you\'ve studied that need review', icon: Clock },
-          { id: 'new' as StudyMode, label: 'Learn New', desc: 'Introduce 2 new cards', icon: GraduationCap },
-          { id: 'mixed' as StudyMode, label: 'Mixed Session', desc: 'Review due + 2 new cards', icon: Zap },
-          { id: 'focus' as StudyMode, label: 'Focus Set', desc: 'Study a specific card set', icon: Target },
-          { id: 'pipeline' as StudyMode, label: 'Ahead of Schedule', desc: 'Study upcoming cards early', icon: Play },
+          { id: 'new' as StudyMode, label: 'Learn New', desc: `Introduce up to ${dailyNewCardLimit} new cards`, icon: GraduationCap },
+          { id: 'pipeline' as StudyMode, label: 'Ahead of Schedule', desc: 'Practice upcoming cards (sandbox — no SR changes)', icon: Play },
         ].map(({ id, label, desc, icon: Icon }) => (
           <button
             key={id}
@@ -1102,23 +1119,6 @@ export function StudyView() {
           </button>
         ))}
       </div>
-
-      {/* Filter by set (for focus mode) */}
-      {mode === 'focus' && selectedTopicId && cardSets.length > 0 && (
-        <div className="mb-6">
-          <label className="text-sm text-gray-400 mb-2 block">Card Set</label>
-          <select
-            value={filterSetId}
-            onChange={(e) => setFilterSetId(e.target.value)}
-            className="input w-full"
-          >
-            <option value="">All Sets</option>
-            {cardSets.map((s) => (
-              <option key={s.id} value={s.id}>{s.name} ({s.card_count} cards)</option>
-            ))}
-          </select>
-        </div>
-      )}
 
       <button
         onClick={() => startSession()}

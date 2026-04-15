@@ -141,7 +141,7 @@ export function TrancheDashboard({ dailyNewCardLimit, onStartAllDue, onStartSele
   const selectedCount = selected.size;
 
   return (
-    <div className="max-w-6xl mx-auto pb-28">
+    <div className="max-w-6xl mx-auto">
       {/* Top strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
         <div className="card p-4">
