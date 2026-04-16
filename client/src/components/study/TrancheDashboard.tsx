@@ -184,10 +184,10 @@ export function TrancheDashboard({ dailyNewCardLimit, globalNewCardLimit, topicI
           )}
           <div className="text-[11px] text-gray-500 mt-0.5">
             {globalRemaining <= 0
-              ? 'Daily limit hit — review upcoming early'
+              ? 'Limit hit (12h window) — review upcoming early'
               : topicRemaining <= 0 && topicId
                 ? 'Topic limit hit — try another topic'
-                : `${globalRemaining} new card${globalRemaining === 1 ? '' : 's'} left today`}
+                : `${globalRemaining} new card${globalRemaining === 1 ? '' : 's'} left`}
           </div>
         </div>
         <div className="card p-4">

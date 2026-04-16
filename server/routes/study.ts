@@ -18,34 +18,20 @@ function genId(): string {
   return uuid().replace(/-/g, '').slice(0, 16);
 }
 
-// Start of "today" in America/Indiana/Indianapolis, as a SQLite-friendly
-// UTC datetime string ("YYYY-MM-DD HH:MM:SS"). Used so the daily new-card
-// budget rolls over at local midnight regardless of server tz.
-function indyDayStartUtc(): string {
-  const dateFmt = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Indiana/Indianapolis',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-  });
-  const hourFmt = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Indiana/Indianapolis', hour: '2-digit', hour12: false,
-  });
-  const indyToday = dateFmt.format(new Date()); // "2026-04-15"
-  for (const offset of ['-04:00', '-05:00']) {
-    const candidate = new Date(`${indyToday}T00:00:00${offset}`);
-    if (dateFmt.format(candidate) === indyToday && hourFmt.format(candidate) === '00') {
-      return candidate.toISOString().replace('T', ' ').slice(0, 19);
-    }
-  }
-  return new Date().toISOString().slice(0, 10) + ' 00:00:00';
+// Rolling 12-hour window cutoff as a SQLite-friendly UTC datetime string.
+// New-card budget resets 12 hours after the last batch, not at midnight.
+function rollingCutoffUtc(): string {
+  const cutoff = new Date(Date.now() - 12 * 60 * 60 * 1000);
+  return cutoff.toISOString().replace('T', ' ').slice(0, 19);
 }
 
-// How many slot-0 cards have been promoted past slot 0 today (Indy tz).
+// How many slot-0 cards have been promoted past slot 0 in the last 12 hours.
 // Wrong answers on a New card don't count — the card never advanced.
-// Pass a topicId to scope the count to a single topic; the daily new-card
+// Pass a topicId to scope the count to a single topic; the new-card
 // budget is per-topic, not global, so studying English doesn't starve
 // Russian (or any other topic).
 function newCardsLearnedToday(topicId?: string): number {
-  const cutoff = indyDayStartUtc();
+  const cutoff = rollingCutoffUtc();
   if (topicId) {
     const row = queryOne(
       `SELECT COUNT(*) as count FROM review_log rl

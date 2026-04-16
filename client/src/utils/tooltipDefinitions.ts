@@ -78,9 +78,9 @@ const defs: Record<string, TooltipDef> = {
     impact: 'Decay prevents false confidence. Cards you stop reviewing lose their tier.',
   },
   'daily-limit': {
-    definition: 'Maximum number of new cards introduced per day.',
+    definition: 'Maximum number of new cards introduced per rolling 12-hour window.',
     impact: 'Too many new cards at once overwhelms short-term memory. 10-20/day is optimal.',
-    note: 'This only affects new cards (Tier 0). Due reviews are always shown.',
+    note: 'This only affects new cards (Tier 0). Due reviews are always shown. Budget resets 12h after your last batch.',
   },
   'session-length': {
     definition: 'Target number of cards per study session.',

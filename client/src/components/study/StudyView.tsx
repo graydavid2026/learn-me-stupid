@@ -926,10 +926,10 @@ export function StudyView() {
       // Check if it's a limit issue vs genuinely no new cards
       const topicHasNew = selectedTopic ? (selectedTopic as any).new_count > 0 || true : true;
       if (topicHasNew) {
-        emptyTitle = 'Daily limit reached';
+        emptyTitle = 'Limit reached';
         emptyMsg = selectedTopicId
-          ? `You've already learned ${dailyNewCardLimit} new cards in this topic today (or ${globalNewCardLimit} total across all topics). Come back tomorrow for more!`
-          : `You've hit your daily limit of ${globalNewCardLimit} new cards across all topics. Come back tomorrow for more!`;
+          ? `You've already learned ${dailyNewCardLimit} new cards in this topic (or ${globalNewCardLimit} total) within the last 12 hours. Check back soon!`
+          : `You've hit your limit of ${globalNewCardLimit} new cards across all topics in the last 12 hours. Check back soon!`;
       } else {
         emptyMsg = 'No new cards available in this topic. Add some cards or pick a different mode.';
       }
