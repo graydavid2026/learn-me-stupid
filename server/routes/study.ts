@@ -903,7 +903,6 @@ router.get('/tranche-dashboard', (req, res) => {
     };
     const bySlot = new Map<number, Chip[]>();
     let dueIn24hTotal = 0;
-    let lastStudiedAt: string | null = null;
 
     for (const r of rows as any[]) {
       const chip: Chip = {
@@ -917,10 +916,21 @@ router.get('/tranche-dashboard', (req, res) => {
       bySlot.get(r.sr_slot)!.push(chip);
       const dueMs = new Date(r.sr_next_due_at + 'Z').getTime();
       if (dueMs <= in24h) dueIn24hTotal++;
-      if (r.sr_last_reviewed_at && (!lastStudiedAt || r.sr_last_reviewed_at > lastStudiedAt)) {
-        lastStudiedAt = r.sr_last_reviewed_at;
-      }
     }
+
+    // Pull last-studied from the review log directly — not from the due-cards
+    // query, because just-studied cards have been promoted out of the "due"
+    // window and wouldn't show up there.
+    const lastReviewRow = topicId
+      ? queryOne(
+          `SELECT MAX(rl.reviewed_at) as last FROM review_log rl
+             JOIN cards c ON c.id = rl.card_id
+             JOIN card_sets cs ON cs.id = c.card_set_id
+            WHERE cs.topic_id = ?`,
+          [topicId]
+        )
+      : queryOne(`SELECT MAX(reviewed_at) as last FROM review_log`);
+    const lastStudiedAt: string | null = lastReviewRow?.last || null;
 
     const trancheLabels = SLOT_LABELS as Record<number, string>;
     const tranches = Array.from(bySlot.entries())
