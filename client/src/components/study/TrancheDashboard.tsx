@@ -13,9 +13,9 @@ const SLOT_LABELS: Record<number, string> = {
   7: '2w', 8: '4w', 9: '8w', 10: '3mo', 11: '6mo', 12: '9mo', 13: '1yr',
 };
 
-// Slots shown in the timeline. We skip slot 0 ("New") since anything before
-// 5 minutes isn't useful to surface in the tranche strip.
-const TIMELINE_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+// Slots shown in the timeline. Start at 1d — anything shorter (New, 5m,
+// 1h, 4h) is noise in the tranche strip.
+const TIMELINE_SLOTS = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
 
 type Chip = {
   id: string;
