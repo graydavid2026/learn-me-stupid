@@ -437,6 +437,7 @@ export function StudyView() {
   const voiceCmdEnabled = useStore((s) => s.voiceCmdEnabled);
   const newCardOrder = useStore((s) => s.newCardOrder);
   const dailyNewCardLimit = useStore((s) => s.dailyNewCardLimit);
+  const globalNewCardLimit = useStore((s) => s.globalNewCardLimit);
   const selectedTopic = topics.find((t) => t.id === selectedTopicId);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -649,6 +650,7 @@ export function StudyView() {
       params.set('mode', 'new');
       params.set('limit', String(dailyNewCardLimit));
       params.set('dailyNewLimit', String(dailyNewCardLimit));
+      params.set('globalNewLimit', String(globalNewCardLimit));
       const order = selectedTopicId ? newCardOrder[selectedTopicId] : undefined;
       if (order === 'random') params.set('order', 'random');
       url = '/api/study/due?';
@@ -656,6 +658,7 @@ export function StudyView() {
       params.set('mode', 'mixed');
       params.set('limit', String(dailyNewCardLimit));
       params.set('dailyNewLimit', String(dailyNewCardLimit));
+      params.set('globalNewLimit', String(globalNewCardLimit));
       const order = selectedTopicId ? newCardOrder[selectedTopicId] : undefined;
       if (order === 'random') params.set('order', 'random');
       url = '/api/study/due?';
@@ -1091,6 +1094,7 @@ export function StudyView() {
 
       <TrancheDashboard
         dailyNewCardLimit={dailyNewCardLimit}
+        globalNewCardLimit={globalNewCardLimit}
         topicId={selectedTopicId}
         onStartSelected={(ids) => startSession(ids)}
       />

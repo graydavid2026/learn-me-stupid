@@ -93,6 +93,8 @@ interface AppState {
 
   dailyNewCardLimit: number;
   setDailyNewCardLimit: (n: number) => void;
+  globalNewCardLimit: number;
+  setGlobalNewCardLimit: (n: number) => void;
 
   // Per-topic new-card draw order. 'entered' = created_at ASC, 'random' = RANDOM().
   // Missing entries default to 'entered'.
@@ -167,6 +169,19 @@ export const useStore = create<AppState>((set, get) => ({
     const clamped = Math.max(0, Math.min(20, Math.floor(n)));
     try { localStorage.setItem('lms.dailyNewCardLimit', String(clamped)); } catch {}
     set({ dailyNewCardLimit: clamped });
+  },
+
+  globalNewCardLimit: (() => {
+    try {
+      const raw = localStorage.getItem('lms.globalNewCardLimit');
+      const n = raw == null ? 8 : Number(raw);
+      return Number.isFinite(n) && n >= 0 ? n : 8;
+    } catch { return 8; }
+  })(),
+  setGlobalNewCardLimit: (n) => {
+    const clamped = Math.max(0, Math.min(50, Math.floor(n)));
+    try { localStorage.setItem('lms.globalNewCardLimit', String(clamped)); } catch {}
+    set({ globalNewCardLimit: clamped });
   },
 
   newCardOrder: (() => {

@@ -105,9 +105,12 @@ function getFullCard(cardId: string) {
 // (no mode)     — legacy: all due cards (review + new)
 router.get('/due', (req, res) => {
   try {
-    const { topic, set, tags, slotMin, slotMax, mode, limit, order, ids, dailyNewLimit } = req.query;
+    const { topic, set, tags, slotMin, slotMax, mode, limit, order, ids, dailyNewLimit, globalNewLimit } = req.query;
     const requestedNewLimit = Number(limit) || 10;
     const dailyCap = dailyNewLimit !== undefined ? Math.max(0, Number(dailyNewLimit)) : null;
+    // Hard ceiling across ALL topics combined (e.g. 8/day). Per-topic cap
+    // (dailyCap) still applies within this global ceiling.
+    const globalCap = globalNewLimit !== undefined ? Math.max(0, Number(globalNewLimit)) : null;
 
     // ids=a,b,c — fetch specific cards by id regardless of SR state.
     // Used by "Study Again" to re-drill cards just answered wrong, which
@@ -125,18 +128,23 @@ router.get('/due', (req, res) => {
       return res.json(ordered.map((c: any) => getFullCard(c.id)).filter(Boolean));
     }
 
+    // Global ceiling: how many new cards across ALL topics remain today.
+    const globalUsed = globalCap !== null ? newCardsLearnedToday() : 0;
+    const globalRemaining = globalCap !== null ? Math.max(0, globalCap - globalUsed) : Infinity;
+
     // Per-topic daily budget for new cards: when mode=new and no specific
     // topic is selected, pull up to `dailyCap` new cards from EACH topic
-    // that still has budget remaining. This prevents studying English from
-    // starving Russian (or any other topic).
+    // that still has budget remaining, capped by the global ceiling.
     if (mode === 'new' && dailyCap !== null && !topic) {
       const allTopics = queryAll(`SELECT id FROM topics`);
       let allNewCards: any[] = [];
+      let globalBudgetLeft = globalRemaining;
       for (const t of allTopics) {
+        if (globalBudgetLeft <= 0) break;
         const used = newCardsLearnedToday(t.id);
         const remaining = Math.max(0, dailyCap - used);
         if (remaining <= 0) continue;
-        const topicLimit = Math.min(requestedNewLimit, remaining);
+        const topicLimit = Math.min(requestedNewLimit, remaining, globalBudgetLeft);
         const orderClause = order === 'random'
           ? 'ORDER BY RANDOM()'
           : 'ORDER BY c.created_at ASC';
@@ -149,17 +157,20 @@ router.get('/due', (req, res) => {
           [t.id, topicLimit]
         );
         allNewCards.push(...rows);
+        globalBudgetLeft -= rows.length;
       }
       const fullCards = allNewCards.map((c: any) => getFullCard(c.id)).filter(Boolean);
       return res.json(fullCards);
     }
 
-    // Single-topic budget
+    // Single-topic budget: min of per-topic remaining and global remaining
     let newCardLimit = requestedNewLimit;
     if (dailyCap !== null) {
       const used = newCardsLearnedToday(typeof topic === 'string' ? topic : undefined);
       const remaining = Math.max(0, dailyCap - used);
-      newCardLimit = Math.min(requestedNewLimit, remaining);
+      newCardLimit = Math.min(requestedNewLimit, remaining, globalRemaining);
+    } else if (globalCap !== null) {
+      newCardLimit = Math.min(requestedNewLimit, globalRemaining);
     }
 
     let sql = `
@@ -997,6 +1008,7 @@ router.get('/tranche-dashboard', (req, res) => {
       },
       newToday: {
         used: newCardsLearnedToday(topicId),
+        usedGlobal: newCardsLearnedToday(),
         available: newPoolRow?.count || 0,
       },
       lastStudiedAt,

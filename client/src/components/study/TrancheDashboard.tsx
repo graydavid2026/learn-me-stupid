@@ -37,12 +37,13 @@ type Tranche = {
 type Dashboard = {
   tranches: Tranche[];
   totals: { dueNow: number; dueIn24h: number; dueIn48h: number };
-  newToday: { used: number; available: number };
+  newToday: { used: number; usedGlobal: number; available: number };
   lastStudiedAt: string | null;
 };
 
 interface Props {
   dailyNewCardLimit: number;
+  globalNewCardLimit: number;
   topicId?: string | null;
   onStartSelected: (cardIds: string[]) => void;
 }
@@ -70,7 +71,7 @@ function formatAbsolute(d: Date): string {
   });
 }
 
-export function TrancheDashboard({ dailyNewCardLimit, topicId, onStartSelected }: Props) {
+export function TrancheDashboard({ dailyNewCardLimit, globalNewCardLimit, topicId, onStartSelected }: Props) {
   const [data, setData] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -148,7 +149,8 @@ export function TrancheDashboard({ dailyNewCardLimit, topicId, onStartSelected }
   }
 
   const { tranches, totals, newToday, lastStudiedAt } = data;
-  const newRemaining = Math.max(0, dailyNewCardLimit - newToday.used);
+  const topicRemaining = Math.max(0, dailyNewCardLimit - newToday.used);
+  const globalRemaining = Math.max(0, globalNewCardLimit - (newToday.usedGlobal ?? 0));
   const lastStudied = parseServerDate(lastStudiedAt);
   const selectedCount = selected.size;
 
@@ -173,12 +175,19 @@ export function TrancheDashboard({ dailyNewCardLimit, topicId, onStartSelected }
             <Sparkles className="w-3 h-3" /> New today
           </div>
           <div className="text-3xl font-bold text-white">
-            {newToday.used} <span className="text-base text-gray-500">/ {dailyNewCardLimit}</span>
+            {newToday.usedGlobal ?? 0} <span className="text-base text-gray-500">/ {globalNewCardLimit}</span>
           </div>
+          {topicId && (
+            <div className="text-[11px] text-gray-500 mt-0.5">
+              This topic: {newToday.used} / {dailyNewCardLimit}
+            </div>
+          )}
           <div className="text-[11px] text-gray-500 mt-0.5">
-            {newRemaining > 0
-              ? `${newRemaining} new card${newRemaining === 1 ? '' : 's'} left`
-              : 'Daily limit hit — review upcoming early'}
+            {globalRemaining <= 0
+              ? 'Daily limit hit — review upcoming early'
+              : topicRemaining <= 0 && topicId
+                ? 'Topic limit hit — try another topic'
+                : `${globalRemaining} new card${globalRemaining === 1 ? '' : 's'} left today`}
           </div>
         </div>
         <div className="card p-4">
