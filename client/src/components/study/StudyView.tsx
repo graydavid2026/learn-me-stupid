@@ -1120,20 +1120,26 @@ export function StudyView() {
         ))}
       </div>
 
-      <button
-        onClick={() => startSession()}
-        disabled={loading}
-        className="btn-primary w-full py-3 text-lg flex items-center justify-center gap-2"
-      >
-        {loading ? (
-          'Loading...'
-        ) : (
-          <>
-            <Play className="w-5 h-5" />
-            Start Studying
-          </>
-        )}
-      </button>
+      {mode === 'new' && !selectedTopicId ? (
+        <div className="text-center text-gray-400 text-sm py-4 border border-border rounded-lg bg-surface-base">
+          Select a topic from the sidebar to learn new cards.
+        </div>
+      ) : (
+        <button
+          onClick={() => startSession()}
+          disabled={loading}
+          className="btn-primary w-full py-3 text-lg flex items-center justify-center gap-2"
+        >
+          {loading ? (
+            'Loading...'
+          ) : (
+            <>
+              <Play className="w-5 h-5" />
+              Start Studying
+            </>
+          )}
+        </button>
+      )}
     </div>
   );
 }
