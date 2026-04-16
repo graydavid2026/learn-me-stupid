@@ -53,15 +53,15 @@ function parseServerDate(s: string | null): Date | null {
   return new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z');
 }
 
-function formatRelative(target: Date, now: Date = new Date()): string {
+function formatRelative(target: Date, now: Date = new Date(), pastLabel = 'overdue'): string {
   const diffMs = target.getTime() - now.getTime();
   const absMin = Math.round(Math.abs(diffMs) / 60000);
-  const overdue = diffMs < 0;
+  const isPast = diffMs < 0;
   let str: string;
   if (absMin < 60) str = `${absMin}m`;
   else if (absMin < 60 * 24) str = `${Math.round(absMin / 60)}h`;
   else str = `${Math.round(absMin / (60 * 24))}d`;
-  return overdue ? `${str} overdue` : `in ${str}`;
+  return isPast ? `${str} ${pastLabel}` : `in ${str}`;
 }
 
 function formatAbsolute(d: Date): string {
@@ -182,7 +182,7 @@ export function TrancheDashboard({ dailyNewCardLimit, topicId, onStartSelected }
             <Clock className="w-3 h-3" /> Last studied
           </div>
           <div className="text-base font-medium text-white">
-            {lastStudied ? formatRelative(lastStudied) : '—'}
+            {lastStudied ? formatRelative(lastStudied, new Date(), 'ago') : '—'}
           </div>
         </div>
       </div>
