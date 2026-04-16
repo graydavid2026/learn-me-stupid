@@ -36,7 +36,7 @@ type Tranche = {
 
 type Dashboard = {
   tranches: Tranche[];
-  totals: { dueNow: number; dueIn24h: number };
+  totals: { dueNow: number; dueIn24h: number; dueIn48h: number };
   newToday: { used: number; available: number };
   lastStudiedAt: string | null;
 };
@@ -155,7 +155,7 @@ export function TrancheDashboard({ dailyNewCardLimit, topicId, onStartSelected }
   return (
     <div className="max-w-6xl mx-auto">
       {/* Top strip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
         <div className="card p-4">
           <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Due now</div>
           <div className="text-3xl font-bold text-white">{totals.dueNow}</div>
@@ -163,6 +163,10 @@ export function TrancheDashboard({ dailyNewCardLimit, topicId, onStartSelected }
         <div className="card p-4">
           <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Due in 24h</div>
           <div className="text-3xl font-bold text-white">{totals.dueIn24h}</div>
+        </div>
+        <div className="card p-4">
+          <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Due in 48h</div>
+          <div className="text-3xl font-bold text-white">{totals.dueIn48h}</div>
         </div>
         <div className="card p-4">
           <div className="text-xs text-gray-500 uppercase tracking-wide mb-1 flex items-center gap-1">

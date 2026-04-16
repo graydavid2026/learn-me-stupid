@@ -962,11 +962,38 @@ router.get('/tranche-dashboard', (req, res) => {
           []
         );
 
+    // Cards due within 24h and 48h (includes cards not yet due but upcoming)
+    const upcomingParams: any[] = [];
+    let upcomingTopicClause = '';
+    if (topicId) {
+      upcomingTopicClause = ' AND cs.topic_id = ?';
+      upcomingParams.push(topicId);
+    }
+    const dueIn24hRow = queryOne(
+      `SELECT COUNT(*) as count FROM cards c
+         JOIN card_sets cs ON cs.id = c.card_set_id
+        WHERE c.sr_is_active = 1 AND c.sr_slot > 0
+          AND c.sr_next_due_at IS NOT NULL
+          AND c.sr_next_due_at <= datetime('now', '+24 hours')
+          ${upcomingTopicClause}`,
+      upcomingParams
+    );
+    const dueIn48hRow = queryOne(
+      `SELECT COUNT(*) as count FROM cards c
+         JOIN card_sets cs ON cs.id = c.card_set_id
+        WHERE c.sr_is_active = 1 AND c.sr_slot > 0
+          AND c.sr_next_due_at IS NOT NULL
+          AND c.sr_next_due_at <= datetime('now', '+48 hours')
+          ${upcomingTopicClause}`,
+      upcomingParams
+    );
+
     res.json({
       tranches,
       totals: {
         dueNow: rows.length,
-        dueIn24h: dueIn24hTotal,
+        dueIn24h: dueIn24hRow?.count || 0,
+        dueIn48h: dueIn48hRow?.count || 0,
       },
       newToday: {
         used: newCardsLearnedToday(topicId),
