@@ -107,21 +107,11 @@ router.get('/due', (req, res) => {
   try {
     const { topic, set, tags, slotMin, slotMax, mode, limit, order, ids, dailyNewLimit } = req.query;
     const requestedNewLimit = Number(limit) || 10;
-    // Daily cap from Settings — caller passes ?dailyNewLimit=N.
-    // The effective new-card budget is min(requested batch, daily cap remaining).
-    let newCardLimit = requestedNewLimit;
-    if (dailyNewLimit !== undefined) {
-      const dailyCap = Math.max(0, Number(dailyNewLimit));
-      // Scope the daily cap to the selected topic when one is provided so
-      // each topic has its own budget. No topic → global count (legacy).
-      const used = newCardsLearnedToday(typeof topic === 'string' ? topic : undefined);
-      const remaining = Math.max(0, dailyCap - used);
-      newCardLimit = Math.min(requestedNewLimit, remaining);
-    }
+    const dailyCap = dailyNewLimit !== undefined ? Math.max(0, Number(dailyNewLimit)) : null;
 
     // ids=a,b,c — fetch specific cards by id regardless of SR state.
     // Used by "Study Again" to re-drill cards just answered wrong, which
-    // have already been promoted to slot 1 by processReview().
+    // have already been promoted to slot 4 by processReview().
     if (ids && typeof ids === 'string') {
       const idList = ids.split(',').map((s) => s.trim()).filter(Boolean);
       if (idList.length === 0) return res.json([]);
@@ -135,6 +125,43 @@ router.get('/due', (req, res) => {
       return res.json(ordered.map((c: any) => getFullCard(c.id)).filter(Boolean));
     }
 
+    // Per-topic daily budget for new cards: when mode=new and no specific
+    // topic is selected, pull up to `dailyCap` new cards from EACH topic
+    // that still has budget remaining. This prevents studying English from
+    // starving Russian (or any other topic).
+    if (mode === 'new' && dailyCap !== null && !topic) {
+      const allTopics = queryAll(`SELECT id FROM topics`);
+      let allNewCards: any[] = [];
+      for (const t of allTopics) {
+        const used = newCardsLearnedToday(t.id);
+        const remaining = Math.max(0, dailyCap - used);
+        if (remaining <= 0) continue;
+        const topicLimit = Math.min(requestedNewLimit, remaining);
+        const orderClause = order === 'random'
+          ? 'ORDER BY RANDOM()'
+          : 'ORDER BY c.created_at ASC';
+        const rows = queryAll(
+          `SELECT c.* FROM cards c
+             JOIN card_sets cs ON cs.id = c.card_set_id
+            WHERE c.sr_is_active = 1 AND c.sr_slot = 0
+              AND cs.topic_id = ?
+            ${orderClause} LIMIT ?`,
+          [t.id, topicLimit]
+        );
+        allNewCards.push(...rows);
+      }
+      const fullCards = allNewCards.map((c: any) => getFullCard(c.id)).filter(Boolean);
+      return res.json(fullCards);
+    }
+
+    // Single-topic budget
+    let newCardLimit = requestedNewLimit;
+    if (dailyCap !== null) {
+      const used = newCardsLearnedToday(typeof topic === 'string' ? topic : undefined);
+      const remaining = Math.max(0, dailyCap - used);
+      newCardLimit = Math.min(requestedNewLimit, remaining);
+    }
+
     let sql = `
       SELECT c.* FROM cards c
       JOIN card_sets cs ON cs.id = c.card_set_id
@@ -143,13 +170,10 @@ router.get('/due', (req, res) => {
     const params: any[] = [];
 
     if (mode === 'review') {
-      // Only cards that have been studied before and are now due again
       sql += ' AND c.sr_slot > 0 AND c.sr_next_due_at IS NOT NULL AND c.sr_next_due_at <= datetime(\'now\')';
     } else if (mode === 'new') {
-      // Only never-studied cards
       sql += ' AND c.sr_slot = 0';
     } else {
-      // Legacy/mixed: all due (review + new)
       sql += ' AND (c.sr_next_due_at IS NULL OR c.sr_next_due_at <= datetime(\'now\'))';
     }
 
