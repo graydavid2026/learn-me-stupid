@@ -53,7 +53,7 @@ function parseServerDate(s: string | null): Date | null {
   return new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z');
 }
 
-function formatRelative(target: Date, now: Date = new Date(), pastLabel = 'overdue'): string {
+function formatRelative(target: Date, now: Date = new Date(), pastLabel = 'ago'): string {
   const diffMs = target.getTime() - now.getTime();
   const absMin = Math.round(Math.abs(diffMs) / 60000);
   const isPast = diffMs < 0;
