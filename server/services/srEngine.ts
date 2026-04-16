@@ -68,7 +68,12 @@ export const SLOT_LABELS: Record<number, string> = {
   12: '9mo', 13: '1yr',
 };
 
-export const MIN_SLOT = 1;
+// Slots 1–3 (5m / 1h / 4h) are retired — the minimum interval is 1 day.
+// A correct answer on a new card promotes straight to slot 4; wrong
+// answers on existing cards floor at slot 4 instead of cascading to
+// sub-day intervals. Slots 1–3 remain in SLOT_INTERVALS_MS for
+// historical review-log entries only.
+export const MIN_SLOT = 4;
 export const MAX_SLOT = 13;
 
 /** Get current time in Indiana */

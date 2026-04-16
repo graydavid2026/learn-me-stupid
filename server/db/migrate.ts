@@ -179,6 +179,27 @@ export async function migrate(): Promise<void> {
     console.warn('Pronunciation cleanup skipped:', e);
   }
 
+  // One-time bump: any card parked in retired slots 1–3 (5m / 1h / 4h)
+  // gets lifted to slot 4 (1d) with a fresh 1-day due date. Idempotent —
+  // reruns are no-ops once everything is >= 4.
+  try {
+    const stragglers = queryAll(
+      `SELECT COUNT(*) AS n FROM cards WHERE sr_slot BETWEEN 1 AND 3`
+    );
+    const n = stragglers[0]?.n ?? 0;
+    if (n > 0) {
+      const oneDayFromNow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      const graceDeadline = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
+      run(
+        `UPDATE cards SET sr_slot = 4, sr_next_due_at = ?, sr_grace_deadline = ?, updated_at = datetime('now') WHERE sr_slot BETWEEN 1 AND 3`,
+        [oneDayFromNow, graceDeadline]
+      );
+      console.log(`Retired sub-day slots: bumped ${n} cards from slots 1–3 to slot 4`);
+    }
+  } catch (e) {
+    console.warn('Retired-slot bump skipped:', e);
+  }
+
   console.log('Database migrated successfully');
 }
 
