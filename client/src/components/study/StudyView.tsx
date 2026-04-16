@@ -920,17 +920,29 @@ export function StudyView() {
 
   // --- EMPTY SESSION (no cards matched the selected mode) ---
   if (sessionActive && !sessionComplete && queue.length === 0) {
-    const emptyMsg =
-      mode === 'new'
-        ? 'No new cards available in this topic. Add some cards or pick a different mode.'
-        : mode === 'review'
-          ? 'Nothing due to review right now. Come back later!'
-          : 'No cards matched this study mode.';
+    let emptyTitle = 'No cards to study';
+    let emptyMsg: string;
+    if (mode === 'new') {
+      // Check if it's a limit issue vs genuinely no new cards
+      const topicHasNew = selectedTopic ? (selectedTopic as any).new_count > 0 || true : true;
+      if (topicHasNew) {
+        emptyTitle = 'Daily limit reached';
+        emptyMsg = selectedTopicId
+          ? `You've already learned ${dailyNewCardLimit} new cards in this topic today (or ${globalNewCardLimit} total across all topics). Come back tomorrow for more!`
+          : `You've hit your daily limit of ${globalNewCardLimit} new cards across all topics. Come back tomorrow for more!`;
+      } else {
+        emptyMsg = 'No new cards available in this topic. Add some cards or pick a different mode.';
+      }
+    } else if (mode === 'review') {
+      emptyMsg = 'Nothing due to review right now. Come back later!';
+    } else {
+      emptyMsg = 'No cards matched this study mode.';
+    }
     return (
       <div className="max-w-lg mx-auto text-center py-12">
         <div className="card p-8">
           <GraduationCap className="w-16 h-16 mx-auto mb-4 text-accent" />
-          <h2 className="text-2xl font-heading font-bold text-white mb-2">No cards to study</h2>
+          <h2 className="text-2xl font-heading font-bold text-white mb-2">{emptyTitle}</h2>
           <p className="text-gray-400 mb-6">{emptyMsg}</p>
           <button
             onClick={() => { setSessionActive(false); }}
