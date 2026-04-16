@@ -41,8 +41,24 @@ function indyDayStartUtc(): string {
 
 // How many slot-0 cards have been promoted past slot 0 today (Indy tz).
 // Wrong answers on a New card don't count — the card never advanced.
-function newCardsLearnedToday(): number {
+// Pass a topicId to scope the count to a single topic; the daily new-card
+// budget is per-topic, not global, so studying English doesn't starve
+// Russian (or any other topic).
+function newCardsLearnedToday(topicId?: string): number {
   const cutoff = indyDayStartUtc();
+  if (topicId) {
+    const row = queryOne(
+      `SELECT COUNT(*) as count FROM review_log rl
+         JOIN cards c ON c.id = rl.card_id
+         JOIN card_sets cs ON cs.id = c.card_set_id
+        WHERE rl.reviewed_at >= ?
+          AND rl.slot_before = 0
+          AND rl.slot_after > 0
+          AND cs.topic_id = ?`,
+      [cutoff, topicId]
+    );
+    return row?.count || 0;
+  }
   const row = queryOne(
     `SELECT COUNT(*) as count FROM review_log
      WHERE reviewed_at >= ?
@@ -96,7 +112,9 @@ router.get('/due', (req, res) => {
     let newCardLimit = requestedNewLimit;
     if (dailyNewLimit !== undefined) {
       const dailyCap = Math.max(0, Number(dailyNewLimit));
-      const used = newCardsLearnedToday();
+      // Scope the daily cap to the selected topic when one is provided so
+      // each topic has its own budget. No topic → global count (legacy).
+      const used = newCardsLearnedToday(typeof topic === 'string' ? topic : undefined);
       const remaining = Math.max(0, dailyCap - used);
       newCardLimit = Math.min(requestedNewLimit, remaining);
     }
@@ -824,20 +842,29 @@ router.get('/topic-dashboard/:topicId', (req, res) => {
 // chip-level data the Study tab dashboard needs. Only tranches with at least
 // one due card are returned; only DUE cards are returned. Cards are sorted
 // oldest due_at first within each tranche.
-router.get('/tranche-dashboard', (_req, res) => {
+router.get('/tranche-dashboard', (req, res) => {
   try {
+    const topicId = typeof req.query.topic === 'string' ? req.query.topic : undefined;
+    const params: any[] = [];
+    let topicClause = '';
+    if (topicId) {
+      topicClause = ' AND cs.topic_id = ?';
+      params.push(topicId);
+    }
     const rows = queryAll(
       `SELECT c.id, c.sr_slot, c.sr_next_due_at, c.sr_last_reviewed_at,
               (SELECT result FROM review_log
                 WHERE card_id = c.id
                 ORDER BY reviewed_at DESC LIMIT 1) as last_result
          FROM cards c
+         JOIN card_sets cs ON cs.id = c.card_set_id
         WHERE c.sr_is_active = 1
           AND c.sr_slot > 0
           AND c.sr_next_due_at IS NOT NULL
           AND c.sr_next_due_at <= datetime('now')
+          ${topicClause}
         ORDER BY c.sr_slot ASC, c.sr_next_due_at ASC`,
-      []
+      params
     );
 
     const now = Date.now();
@@ -889,10 +916,17 @@ router.get('/tranche-dashboard', (_req, res) => {
       });
 
     // Pool of slot-0 cards still available to introduce (independent of daily cap).
-    const newPoolRow = queryOne(
-      `SELECT COUNT(*) as count FROM cards WHERE sr_is_active = 1 AND sr_slot = 0`,
-      []
-    );
+    const newPoolRow = topicId
+      ? queryOne(
+          `SELECT COUNT(*) as count FROM cards c
+             JOIN card_sets cs ON cs.id = c.card_set_id
+            WHERE c.sr_is_active = 1 AND c.sr_slot = 0 AND cs.topic_id = ?`,
+          [topicId]
+        )
+      : queryOne(
+          `SELECT COUNT(*) as count FROM cards WHERE sr_is_active = 1 AND sr_slot = 0`,
+          []
+        );
 
     res.json({
       tranches,
@@ -901,7 +935,7 @@ router.get('/tranche-dashboard', (_req, res) => {
         dueIn24h: dueIn24hTotal,
       },
       newToday: {
-        used: newCardsLearnedToday(),
+        used: newCardsLearnedToday(topicId),
         available: newPoolRow?.count || 0,
       },
       lastStudiedAt,

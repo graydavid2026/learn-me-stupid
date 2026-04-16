@@ -1091,6 +1091,7 @@ export function StudyView() {
 
       <TrancheDashboard
         dailyNewCardLimit={dailyNewCardLimit}
+        topicId={selectedTopicId}
         onStartSelected={(ids) => startSession(ids)}
       />
 

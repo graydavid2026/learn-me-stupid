@@ -43,6 +43,7 @@ type Dashboard = {
 
 interface Props {
   dailyNewCardLimit: number;
+  topicId?: string | null;
   onStartSelected: (cardIds: string[]) => void;
 }
 
@@ -69,7 +70,7 @@ function formatAbsolute(d: Date): string {
   });
 }
 
-export function TrancheDashboard({ dailyNewCardLimit, onStartSelected }: Props) {
+export function TrancheDashboard({ dailyNewCardLimit, topicId, onStartSelected }: Props) {
   const [data, setData] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +85,10 @@ export function TrancheDashboard({ dailyNewCardLimit, onStartSelected }: Props) 
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch('/api/study/tranche-dashboard');
+      const url = topicId
+        ? `/api/study/tranche-dashboard?topic=${encodeURIComponent(topicId)}`
+        : '/api/study/tranche-dashboard';
+      const res = await fetch(url);
       if (!res.ok) throw new Error('Failed');
       const json = (await res.json()) as Dashboard;
       setData(json);
@@ -94,7 +98,7 @@ export function TrancheDashboard({ dailyNewCardLimit, onStartSelected }: Props) 
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [topicId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
