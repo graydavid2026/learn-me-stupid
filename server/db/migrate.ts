@@ -200,6 +200,37 @@ export async function migrate(): Promise<void> {
     console.warn('Retired-slot bump skipped:', e);
   }
 
+  // One-time cleanup: cards that were promoted from slot 0 → slot 4 by a
+  // wrong answer (the pre-2026-04-17 SR bug) get reset to slot 0. Only
+  // applies to cards whose MOST RECENT review was the bad wrong-on-new
+  // promotion — cards reviewed correctly since are left alone. Idempotent:
+  // once reset to slot 0, the WHERE clause matches nothing on rerun.
+  try {
+    const affected = queryOne(
+      `SELECT COUNT(*) AS n FROM cards WHERE sr_slot > 0 AND id IN (
+         SELECT rl.card_id FROM review_log rl
+         JOIN (SELECT card_id, MAX(reviewed_at) AS m FROM review_log GROUP BY card_id) lt
+           ON lt.card_id = rl.card_id AND lt.m = rl.reviewed_at
+         WHERE rl.result = 'wrong' AND rl.slot_before = 0 AND rl.slot_after > 0
+       )`
+    );
+    const n = affected?.n ?? 0;
+    if (n > 0) {
+      run(
+        `UPDATE cards SET sr_slot = 0, sr_next_due_at = NULL, sr_grace_deadline = NULL, updated_at = datetime('now')
+         WHERE sr_slot > 0 AND id IN (
+           SELECT rl.card_id FROM review_log rl
+           JOIN (SELECT card_id, MAX(reviewed_at) AS m FROM review_log GROUP BY card_id) lt
+             ON lt.card_id = rl.card_id AND lt.m = rl.reviewed_at
+           WHERE rl.result = 'wrong' AND rl.slot_before = 0 AND rl.slot_after > 0
+         )`
+      );
+      console.log(`Reset ${n} wrong-on-new cards back to slot 0`);
+    }
+  } catch (e) {
+    console.warn('Wrong-on-new reset skipped:', e);
+  }
+
   console.log('Database migrated successfully');
 }
 
