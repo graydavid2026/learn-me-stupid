@@ -23,7 +23,7 @@ router.get('/', (_req, res) => {
         SELECT cs.topic_id, COUNT(c.id) as due_count
         FROM card_sets cs
         JOIN cards c ON c.card_set_id = cs.id
-        WHERE c.sr_is_active = 1 AND c.sr_slot > 0 AND c.sr_next_due_at IS NOT NULL AND c.sr_next_due_at <= datetime('now')
+        WHERE c.sr_is_active = 1 AND c.sr_slot > 0 AND c.sr_next_due_at IS NOT NULL AND datetime(c.sr_next_due_at) <= datetime('now')
         GROUP BY cs.topic_id
       ) dc ON dc.topic_id = t.id
       ORDER BY t.sort_order, t.created_at

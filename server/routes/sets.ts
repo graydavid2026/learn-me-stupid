@@ -12,8 +12,8 @@ router.get('/topics/:topicId/sets', (req, res) => {
       `SELECT
         cs.*,
         COUNT(c.id) as card_count,
-        SUM(CASE WHEN c.sr_is_active = 1 AND c.sr_slot > 0 AND c.sr_next_due_at IS NOT NULL AND c.sr_next_due_at <= datetime('now') THEN 1 ELSE 0 END) as due_count,
-        SUM(CASE WHEN c.sr_is_active = 1 AND c.sr_slot > 0 AND c.sr_next_due_at IS NOT NULL AND c.sr_next_due_at > datetime('now') AND c.sr_next_due_at <= datetime('now', '+24 hours') THEN 1 ELSE 0 END) as due_soon_count,
+        SUM(CASE WHEN c.sr_is_active = 1 AND c.sr_slot > 0 AND c.sr_next_due_at IS NOT NULL AND datetime(c.sr_next_due_at) <= datetime('now') THEN 1 ELSE 0 END) as due_count,
+        SUM(CASE WHEN c.sr_is_active = 1 AND c.sr_slot > 0 AND c.sr_next_due_at IS NOT NULL AND datetime(c.sr_next_due_at) > datetime('now') AND datetime(c.sr_next_due_at) <= datetime('now', '+24 hours') THEN 1 ELSE 0 END) as due_soon_count,
         SUM(CASE WHEN c.sr_slot = 0 THEN 1 ELSE 0 END) as new_count
       FROM card_sets cs
       LEFT JOIN cards c ON c.card_set_id = cs.id
