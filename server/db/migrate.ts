@@ -1,4 +1,4 @@
-import { initDb, exec, queryAll, run } from './index.js';
+import { initDb, exec, queryAll, queryOne, run } from './index.js';
 // initDb is used when running as standalone script
 
 export async function migrate(): Promise<void> {
