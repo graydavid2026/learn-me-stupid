@@ -99,8 +99,9 @@ router.get('/due', (req, res) => {
     const globalCap = globalNewLimit !== undefined ? Math.max(0, Number(globalNewLimit)) : null;
 
     // ids=a,b,c — fetch specific cards by id regardless of SR state.
-    // Used by "Study Again" to re-drill cards just answered wrong, which
-    // have already been promoted to slot 4 by processReview().
+    // Used by "Study Again" to re-drill cards just answered wrong. Wrong
+    // answers on new cards now stay at slot 0, so this id-fetch is what
+    // surfaces them again within the same session.
     if (ids && typeof ids === 'string') {
       const idList = ids.split(',').map((s) => s.trim()).filter(Boolean);
       if (idList.length === 0) return res.json([]);

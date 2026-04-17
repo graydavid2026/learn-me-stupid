@@ -151,8 +151,8 @@ export function calculateCascadeRegression(currentSlot: number, nextDueAt: strin
 
 export interface ReviewResult {
   newSlot: number;
-  nextDueAt: string;
-  graceDeadline: string;
+  nextDueAt: string | null;
+  graceDeadline: string | null;
   scheduleLocked: boolean;
   reviewType: 'standard' | 'early';
 }
@@ -189,8 +189,21 @@ export function processReview(
   let newSlot: number;
 
   if (isNew) {
-    // First ever review — start at slot 1 regardless of result
-    newSlot = result === 'correct' ? MIN_SLOT : MIN_SLOT;
+    if (result === 'correct') {
+      // First correct → enter the SR cycle at slot 4 (1d).
+      newSlot = MIN_SLOT;
+    } else {
+      // Wrong on a new card — stay at slot 0, no schedule yet. The card
+      // remains in the "Learn New" pool. The user must get it right at
+      // least once before it advances into the review cycle.
+      return {
+        newSlot: 0,
+        nextDueAt: null,
+        graceDeadline: null,
+        scheduleLocked: false,
+        reviewType: 'standard',
+      };
+    }
   } else if (result === 'correct') {
     // Check if within grace period
     const pastGrace = isPastGrace(nextDueAt, currentSlot);
