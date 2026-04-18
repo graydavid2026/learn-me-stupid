@@ -64,6 +64,7 @@ export interface CardFull {
   sr_total_reviews: number;
   sr_total_correct: number;
   sr_is_active: number;
+  card_type: 'standard' | 'cloze' | 'typing';
   front: CardSideFull;
   back: CardSideFull;
 }
@@ -120,8 +121,8 @@ interface AppState {
 
   // Card actions
   fetchCards: (setId: string) => Promise<void>;
-  createCard: (setId: string, data: { tags?: string[]; front: { media_blocks: Partial<MediaBlock>[] }; back: { media_blocks: Partial<MediaBlock>[] } }) => Promise<CardFull | null>;
-  updateCard: (id: string, data: { tags?: string[]; front?: { media_blocks: Partial<MediaBlock>[] }; back?: { media_blocks: Partial<MediaBlock>[] } }) => Promise<void>;
+  createCard: (setId: string, data: { tags?: string[]; card_type?: string; front: { media_blocks: Partial<MediaBlock>[] }; back: { media_blocks: Partial<MediaBlock>[] } }) => Promise<CardFull | null>;
+  updateCard: (id: string, data: { tags?: string[]; card_type?: string; front?: { media_blocks: Partial<MediaBlock>[] }; back?: { media_blocks: Partial<MediaBlock>[] } }) => Promise<void>;
   deleteCard: (id: string) => Promise<void>;
   setEditingCard: (card: CardFull | null) => void;
   setShowCardEditor: (show: boolean) => void;

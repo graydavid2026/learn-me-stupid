@@ -10,15 +10,15 @@ export type HeatLevel = 'good' | 'mid' | 'bad';
 export const HEAT_THRESHOLDS = { good: 80, mid: 50 } as const;
 
 export const HEAT_CSS: Record<HeatLevel, string> = {
-  good: 'bg-green-500/20 text-green-400',
-  mid: 'bg-amber-500/20 text-amber-400',
-  bad: 'bg-red-500/20 text-red-400',
+  good: 'bg-green-500/15 text-success',
+  mid: 'bg-amber-500/15 text-warning',
+  bad: 'bg-red-500/15 text-error',
 };
 
 export const HEAT_COLORS: Record<HeatLevel, string> = {
-  good: '#22c55e',
-  mid: '#f59e0b',
-  bad: '#ef4444',
+  good: '#3d9a6e',
+  mid: '#c9943b',
+  bad: '#c75a5a',
 };
 
 export function getHeatLevel(value: number, thresholds = HEAT_THRESHOLDS): HeatLevel {
@@ -40,10 +40,10 @@ export function getStreakHeat(streak: number): HeatLevel {
 // ─── Slot colors (13-slot SR system) ─────────────────────────────────────────
 
 export const SLOT_COLORS: Record<number, string> = {
-  0: '#6b7280', 1: '#ef4444', 2: '#f97316', 3: '#f59e0b',
-  4: '#eab308', 5: '#a3e635', 6: '#84cc16', 7: '#22c55e',
-  8: '#10b981', 9: '#14b8a6', 10: '#06b6d4', 11: '#3b82f6',
-  12: '#8b5cf6', 13: '#a855f7',
+  0: '#6b7280', 1: '#c75a5a', 2: '#c97a3b', 3: '#c9943b',
+  4: '#b8a44a', 5: '#8aab5a', 6: '#6aab6a', 7: '#3d9a6e',
+  8: '#3a8a7a', 9: '#3a8a8a', 10: '#4a8aaa', 11: '#5b8a9a',
+  12: '#7a7aaa', 13: '#8a6a9a',
 };
 
 // Backward compat alias
@@ -112,12 +112,12 @@ export const fmt = {
 // ─── Chart styles ────────────────────────────────────────────────────────────
 
 export const CHART_TOOLTIP_STYLE: React.CSSProperties = {
-  background: '#1a1d27',
-  border: '1px solid #2e3348',
+  background: '#151720',
+  border: '1px solid #232638',
   borderRadius: 8,
   fontSize: 11,
   fontFamily: 'IBM Plex Mono, monospace',
 };
 
-export const AXIS_TICK = { fill: '#6b7280', fontSize: 11 };
-export const CHART_GRID_STROKE = '#2e3348';
+export const AXIS_TICK = { fill: '#5c5e6e', fontSize: 11 };
+export const CHART_GRID_STROKE = '#232638';

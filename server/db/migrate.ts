@@ -146,6 +146,28 @@ export async function migrate(): Promise<void> {
     // Table might not exist yet
   }
 
+  // Migration: add sr_ease_factor column for SM-2 style per-card ease
+  try {
+    const cardCols = queryAll(`PRAGMA table_info(cards)`);
+    if (!cardCols.some((c: any) => c.name === 'sr_ease_factor')) {
+      exec(`ALTER TABLE cards ADD COLUMN sr_ease_factor REAL DEFAULT 2.5`);
+      console.log('Added sr_ease_factor column to cards');
+    }
+  } catch (e) {
+    // Table might not exist yet on first run
+  }
+
+  // Migration: add card_type column for cloze/typing card types
+  try {
+    const cardCols2 = queryAll(`PRAGMA table_info(cards)`);
+    if (!cardCols2.some((c: any) => c.name === 'card_type')) {
+      exec(`ALTER TABLE cards ADD COLUMN card_type TEXT DEFAULT 'standard'`);
+      console.log('Added card_type column to cards');
+    }
+  } catch (e) {
+    // Table might not exist yet on first run
+  }
+
   // Create sr_slot index after migration ensures the column exists
   try {
     exec(`CREATE INDEX IF NOT EXISTS idx_cards_slot ON cards(sr_slot)`);
@@ -179,25 +201,26 @@ export async function migrate(): Promise<void> {
     console.warn('Pronunciation cleanup skipped:', e);
   }
 
-  // One-time bump: any card parked in retired slots 1–3 (5m / 1h / 4h)
-  // gets lifted to slot 4 (1d) with a fresh 1-day due date. Idempotent —
-  // reruns are no-ops once everything is >= 4.
+  // Slot 1 is the in-session learning slot. Slots 2-3 remain retired.
+  // Bump any stale slot 2-3 cards to slot 4 (they shouldn't exist, but
+  // handle legacy data). Slot 1 cards are auto-graduated by the /due
+  // endpoint when their grace deadline passes.
   try {
-    const stragglers = queryAll(
-      `SELECT COUNT(*) AS n FROM cards WHERE sr_slot BETWEEN 1 AND 3`
+    const stale23 = queryAll(
+      `SELECT COUNT(*) AS n FROM cards WHERE sr_slot IN (2, 3)`
     );
-    const n = stragglers[0]?.n ?? 0;
-    if (n > 0) {
+    const n23 = stale23[0]?.n ?? 0;
+    if (n23 > 0) {
       const oneDayFromNow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
       const graceDeadline = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
       run(
-        `UPDATE cards SET sr_slot = 4, sr_next_due_at = ?, sr_grace_deadline = ?, updated_at = datetime('now') WHERE sr_slot BETWEEN 1 AND 3`,
+        `UPDATE cards SET sr_slot = 4, sr_next_due_at = ?, sr_grace_deadline = ?, updated_at = datetime('now') WHERE sr_slot IN (2, 3)`,
         [oneDayFromNow, graceDeadline]
       );
-      console.log(`Retired sub-day slots: bumped ${n} cards from slots 1–3 to slot 4`);
+      console.log(`Graduated ${n23} cards from retired slots 2-3 to slot 4`);
     }
   } catch (e) {
-    console.warn('Retired-slot bump skipped:', e);
+    console.warn('Retired-slot graduation skipped:', e);
   }
 
   // One-time cleanup: cards that were promoted from slot 0 → slot 4 by a

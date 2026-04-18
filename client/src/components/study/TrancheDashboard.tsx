@@ -9,8 +9,8 @@ const SLOT_COLORS: Record<number, string> = {
 };
 
 const SLOT_LABELS: Record<number, string> = {
-  0: 'New', 1: '5m', 2: '1h', 3: '4h', 4: '1d', 5: '2d', 6: '1w',
-  7: '2w', 8: '4w', 9: '8w', 10: '3mo', 11: '6mo', 12: '9mo', 13: '1yr',
+  0: 'New', 1: '10m', 2: '1h', 3: '4h', 4: '1d', 5: '3d', 6: '1w',
+  7: '2w', 8: '1mo', 9: '2mo', 10: '4mo', 11: '8mo', 12: '1yr', 13: '2yr',
 };
 
 // Slots shown in the timeline. Start at 1d — anything shorter (New, 5m,

@@ -7,12 +7,15 @@ import { DeepDiveView } from './components/deepdive/DeepDiveView';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { SettingsView } from './components/settings/SettingsView';
 import { SearchOverlay } from './components/layout/SearchOverlay';
+import { OnboardingFlow, useOnboarding } from './components/onboarding/OnboardingFlow';
 
 export default function App() {
   const location = useLocation();
+  const { showOnboarding, dismiss } = useOnboarding();
 
   return (
     <AppShell>
+      {showOnboarding && <OnboardingFlow onComplete={dismiss} />}
       <SearchOverlay />
       <AnimatePresence mode="wait">
         <motion.div

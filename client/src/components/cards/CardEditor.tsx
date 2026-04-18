@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, createRef } from 'react';
 import { X, Plus, GripVertical, Trash2, Type, Image, Music, Video, Youtube, Upload, ChevronDown, Clipboard, Mic, Square, VideoIcon, Camera, Pencil } from 'lucide-react';
 import { useStore, MediaBlock, CardFull } from '../../stores/useStore';
 import { ImageAnnotator } from '../ui/ImageAnnotator';
@@ -369,9 +369,10 @@ interface SideEditorProps {
   blocks: EditableBlock[];
   onBlocksChange: (blocks: EditableBlock[]) => void;
   cardSideId?: string;
+  textareaRefs?: React.MutableRefObject<Map<number, HTMLTextAreaElement>>;
 }
 
-function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorProps) {
+function SideEditor({ label, blocks, onBlocksChange, cardSideId, textareaRefs }: SideEditorProps) {
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [annotatingIndex, setAnnotatingIndex] = useState<number | null>(null);
 
@@ -473,6 +474,11 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
                 {/* TEXT BLOCK */}
                 {block.block_type === 'text' && (
                   <textarea
+                    ref={(el) => {
+                      if (textareaRefs && el) {
+                        textareaRefs.current.set(index, el);
+                      }
+                    }}
                     value={block.text_content}
                     onChange={(e) => updateBlock(index, { text_content: e.target.value })}
                     placeholder="Enter text content... (paste text with Ctrl+V)"
@@ -703,6 +709,16 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId }: SideEditorPro
   );
 }
 
+type CardType = 'standard' | 'cloze' | 'typing';
+
+/** Count existing cloze groups in a text to auto-increment */
+function getNextClozeNumber(text: string): number {
+  const matches = text.match(/\{\{c(\d+)::/g);
+  if (!matches) return 1;
+  const nums = matches.map(m => parseInt(m.replace('{{c', '').replace('::', ''), 10));
+  return Math.max(...nums) + 1;
+}
+
 export function CardEditor() {
   const { editingCard, showCardEditor, setShowCardEditor, createCard, updateCard, cardSets } = useStore();
   const [frontBlocks, setFrontBlocks] = useState<EditableBlock[]>([]);
@@ -711,6 +727,8 @@ export function CardEditor() {
   const [tagInput, setTagInput] = useState('');
   const [selectedSetId, setSelectedSetId] = useState('');
   const [saving, setSaving] = useState(false);
+  const [cardType, setCardType] = useState<CardType>('standard');
+  const frontTextareaRefs = useRef<Map<number, HTMLTextAreaElement>>(new Map());
 
   useEffect(() => {
     if (editingCard) {
@@ -742,13 +760,42 @@ export function CardEditor() {
       );
       setTags(JSON.parse(editingCard.tags || '[]'));
       setSelectedSetId(editingCard.card_set_id);
+      setCardType((editingCard.card_type as CardType) || 'standard');
     } else {
       setFrontBlocks([newBlock('text')]);
       setBackBlocks([newBlock('text')]);
       setTags([]);
       setSelectedSetId(cardSets[0]?.id || '');
+      setCardType('standard');
     }
   }, [editingCard, cardSets]);
+
+  const handleMakeCloze = () => {
+    // Find the first text block textarea with a selection
+    for (const [index, textarea] of frontTextareaRefs.current.entries()) {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      if (start !== end) {
+        const text = frontBlocks[index].text_content;
+        const selected = text.slice(start, end);
+        const clozeNum = getNextClozeNumber(text);
+        const wrapped = `{{c${clozeNum}::${selected}}}`;
+        const newText = text.slice(0, start) + wrapped + text.slice(end);
+        const updated = frontBlocks.map((b, i) => i === index ? { ...b, text_content: newText } : b);
+        setFrontBlocks(updated);
+        // Restore cursor position after React re-render
+        setTimeout(() => {
+          const ta = frontTextareaRefs.current.get(index);
+          if (ta) {
+            const newPos = start + wrapped.length;
+            ta.setSelectionRange(newPos, newPos);
+            ta.focus();
+          }
+        }, 0);
+        return;
+      }
+    }
+  };
 
   if (!showCardEditor) return null;
 
@@ -800,6 +847,7 @@ export function CardEditor() {
         if (editingCard.back?.id) await uploadPendingFiles(backBlocks, editingCard.back.id);
         await updateCard(editingCard.id, {
           tags,
+          card_type: cardType,
           front: { media_blocks: toMediaBlocks(frontBlocks) },
           back: { media_blocks: toMediaBlocks(backBlocks) },
         });
@@ -807,6 +855,7 @@ export function CardEditor() {
         // Create card first (without file paths for pending files)
         const created = await createCard(selectedSetId, {
           tags,
+          card_type: cardType,
           front: { media_blocks: toMediaBlocks(frontBlocks) },
           back: { media_blocks: toMediaBlocks(backBlocks) },
         });
@@ -870,11 +919,44 @@ export function CardEditor() {
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-6">
+          {/* Card Type Selector */}
+          <div>
+            <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2">Card Type</h3>
+            <div className="flex gap-1 bg-surface-base rounded-lg p-1 border border-border">
+              {(['standard', 'cloze', 'typing'] as CardType[]).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setCardType(t)}
+                  className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors capitalize ${
+                    cardType === t
+                      ? 'bg-accent/20 text-accent border border-accent/30'
+                      : 'text-gray-400 hover:text-gray-200 border border-transparent'
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {cardType === 'cloze' && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleMakeCloze}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-accent/15 text-accent hover:bg-accent/25 rounded-md text-sm transition-colors"
+              >
+                Make Cloze
+              </button>
+              <span className="text-xs text-gray-500">Select text in front side, then click — or type {'{{c1::answer}}'} manually</span>
+            </div>
+          )}
+
           <SideEditor
             label="Front Side"
             blocks={frontBlocks}
             onBlocksChange={setFrontBlocks}
             cardSideId={editingCard?.front?.id}
+            textareaRefs={cardType === 'cloze' ? frontTextareaRefs : undefined}
           />
 
           <SideEditor

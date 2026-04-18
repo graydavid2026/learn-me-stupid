@@ -7,13 +7,21 @@
     @apply border-border;
   }
   body {
-    @apply bg-surface-base text-gray-100 font-body;
+    @apply bg-surface-base text-text-primary font-body;
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
   h1, h2, h3, h4, h5, h6 {
-    @apply font-heading;
+    @apply font-heading tracking-tight;
   }
+
+  ::selection {
+    background: rgba(212, 168, 83, 0.25);
+    color: #e4e4e7;
+  }
+
   /* Safe areas for notched phones */
   .safe-top {
     padding-top: env(safe-area-inset-top);
@@ -25,33 +33,42 @@
 
 @layer components {
   .btn-primary {
-    @apply bg-accent hover:bg-accent-hover text-white px-4 py-2 rounded-lg font-medium transition-colors duration-150;
+    @apply bg-accent hover:bg-accent-hover text-surface-base px-4 py-2 rounded-lg font-medium transition-all duration-150;
+    @apply active:scale-[0.98];
   }
   .btn-secondary {
-    @apply bg-surface-elevated hover:bg-surface text-gray-200 px-4 py-2 rounded-lg font-medium border border-border transition-colors duration-150;
+    @apply bg-transparent hover:bg-surface-elevated text-text-primary px-4 py-2 rounded-lg font-medium border border-border hover:border-accent/30 transition-all duration-150;
+    @apply active:scale-[0.98];
   }
   .btn-danger {
-    @apply bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-150;
+    @apply bg-error/15 hover:bg-error/25 text-error border border-error/20 hover:border-error/40 px-4 py-2 rounded-lg font-medium transition-all duration-150;
+    @apply active:scale-[0.98];
   }
   .card {
-    @apply bg-surface rounded-card border border-border p-4;
+    @apply bg-surface rounded-card border border-border/60 p-4;
   }
   .input {
-    @apply bg-surface-base border border-border rounded-lg px-3 py-2 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent;
+    @apply bg-surface-base border border-border rounded-lg px-3 py-2 text-text-primary placeholder-text-tertiary focus:outline-none focus:ring-1 focus:ring-accent/50 focus:border-accent/40 transition-all;
   }
 }
 
+/* Focus ring for interactive elements */
+:focus-visible {
+  outline: 1px solid rgba(212, 168, 83, 0.4);
+  outline-offset: 2px;
+}
+
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #0f1117;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2e3348;
-  border-radius: 4px;
+  background: #232638;
+  border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #3e4460;
+  background: #2e3348;
 }

@@ -1,20 +1,21 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { GraduationCap, RotateCcw, Check, X, ChevronRight, Play, Filter, Zap, Clock, Target, ArrowLeft, Mic, Maximize2, Lightbulb, MessageSquare, Link2, AlertTriangle, Send, Loader2 } from 'lucide-react';
+import { GraduationCap, RotateCcw, Check, X, ChevronRight, Play, Filter, Zap, Clock, Target, ArrowLeft, Mic, Maximize2, Lightbulb, MessageSquare, Link2, AlertTriangle, Send, Loader2, Flame, Plus } from 'lucide-react';
 import { useStore, CardFull, MediaBlock, CardSideFull } from '../../stores/useStore';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ImageLightbox, HotspotImage, parseHotspotData } from './ImageViewer';
 import { TrancheDashboard } from './TrancheDashboard';
+import { getStreakHeat, HEAT_COLORS } from '../../utils/formatters';
 
 const SLOT_COLORS: Record<number, string> = {
-  0: '#6b7280', 1: '#ef4444', 2: '#f97316', 3: '#f59e0b',
-  4: '#eab308', 5: '#a3e635', 6: '#84cc16', 7: '#22c55e',
-  8: '#10b981', 9: '#14b8a6', 10: '#06b6d4', 11: '#3b82f6',
-  12: '#8b5cf6', 13: '#a855f7',
+  0: '#6b7280', 1: '#c75a5a', 2: '#c97a3b', 3: '#c9943b',
+  4: '#b8a44a', 5: '#8aab5a', 6: '#6aab6a', 7: '#3d9a6e',
+  8: '#3a8a7a', 9: '#3a8a8a', 10: '#4a8aaa', 11: '#5b8a9a',
+  12: '#7a7aaa', 13: '#8a6a9a',
 };
 
 const SLOT_LABELS: Record<number, string> = {
-  0: 'New', 1: '5m', 2: '1h', 3: '4h', 4: '1d', 5: '2d', 6: '1w',
-  7: '2w', 8: '4w', 9: '8w', 10: '3mo', 11: '6mo', 12: '9mo', 13: '1yr',
+  0: 'New', 1: '10m', 2: '1h', 3: '4h', 4: '1d', 5: '3d', 6: '1w',
+  7: '2w', 8: '1mo', 9: '2mo', 10: '4mo', 11: '8mo', 12: '1yr', 13: '2yr',
 };
 
 function SlotDots({ slot }: { slot: number }) {
@@ -24,10 +25,10 @@ function SlotDots({ slot }: { slot: number }) {
         <div
           key={i}
           className="w-1.5 h-1.5 rounded-full transition-colors"
-          style={{ backgroundColor: i < slot ? SLOT_COLORS[slot] : '#2e3348' }}
+          style={{ backgroundColor: i < slot ? SLOT_COLORS[slot] : '#232638' }}
         />
       ))}
-      <span className="text-xs text-gray-400 ml-1 font-mono">{SLOT_LABELS[slot]} ({slot}/13)</span>
+      <span className="text-xs text-text-secondary ml-1 font-mono">{SLOT_LABELS[slot]} ({slot}/13)</span>
     </div>
   );
 }
@@ -151,7 +152,7 @@ function renderMarkdownBold(text: string): (string | JSX.Element)[] {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
   return parts.map((part, i) => {
     if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={i} className="text-white font-semibold">{part.slice(2, -2)}</strong>;
+      return <strong key={i} className="text-text-primary font-semibold">{part.slice(2, -2)}</strong>;
     }
     return part;
   });
@@ -168,10 +169,10 @@ interface ElaborationPrompt {
 }
 
 const ELABORATION_PROMPTS: ElaborationPrompt[] = [
-  { id: 'example', label: 'Real-World Example', icon: Lightbulb, placeholder: 'Describe a real scenario where this applies...', color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30' },
-  { id: 'mistake', label: 'Common Mistake', icon: AlertTriangle, placeholder: 'What do people get wrong about this?', color: 'text-red-400 bg-red-500/10 border-red-500/30' },
-  { id: 'connection', label: 'Connects To...', icon: Link2, placeholder: 'How does this relate to other concepts you know?', color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' },
-  { id: 'own-words', label: 'In My Own Words', icon: MessageSquare, placeholder: 'Explain this like you\'re teaching someone...', color: 'text-green-400 bg-green-500/10 border-green-500/30' },
+  { id: 'example', label: 'Real-World Example', icon: Lightbulb, placeholder: 'Describe a real scenario where this applies...', color: 'text-accent bg-accent/10 border-accent/25' },
+  { id: 'mistake', label: 'Common Mistake', icon: AlertTriangle, placeholder: 'What do people get wrong about this?', color: 'text-error bg-error/10 border-error/25' },
+  { id: 'connection', label: 'Connects To...', icon: Link2, placeholder: 'How does this relate to other concepts you know?', color: 'text-secondary bg-secondary/10 border-secondary/25' },
+  { id: 'own-words', label: 'In My Own Words', icon: MessageSquare, placeholder: 'Explain this like you\'re teaching someone...', color: 'text-success bg-success/10 border-success/25' },
 ];
 
 function ElaborationPanel({ card, onCardUpdated }: { card: CardFull; onCardUpdated: (card: CardFull) => void }) {
@@ -277,10 +278,10 @@ function ElaborationPanel({ card, onCardUpdated }: { card: CardFull; onCardUpdat
                 }}
                 className={`w-full text-left px-2.5 py-2 rounded-lg border text-xs font-medium transition-all flex items-center gap-2 min-h-[40px] ${
                   hasSaved
-                    ? 'bg-green-500/10 border-green-500/30 text-green-400'
+                    ? 'bg-success/10 border-success/25 text-success'
                     : isActive
                       ? prompt.color + ' ring-1 ring-current'
-                      : 'bg-surface-base border-border text-gray-400 hover:text-gray-200 hover:border-gray-500'
+                      : 'bg-surface-base border-border text-text-secondary hover:text-text-primary hover:border-border'
                 }`}
               >
                 <Icon className="w-4 h-4 shrink-0" />
@@ -296,7 +297,7 @@ function ElaborationPanel({ card, onCardUpdated }: { card: CardFull; onCardUpdat
                     onChange={e => setInputValue(e.target.value)}
                     placeholder={prompt.placeholder}
                     rows={2}
-                    className="w-full bg-surface-base border border-border rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-accent focus:outline-none resize-none"
+                    className="w-full bg-surface-base border border-border rounded-lg px-3 py-2 text-sm text-text-primary placeholder-text-tertiary focus:border-accent/40 focus:ring-1 focus:ring-accent/30 focus:outline-none resize-none transition-all"
                     onKeyDown={e => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
@@ -311,14 +312,14 @@ function ElaborationPanel({ card, onCardUpdated }: { card: CardFull; onCardUpdat
                   <div className="flex justify-end gap-2 mt-1">
                     <button
                       onClick={() => { setActivePrompt(null); setInputValue(''); }}
-                      className="px-2.5 py-1 text-xs text-gray-400 hover:text-gray-200"
+                      className="px-2.5 py-1 text-xs text-text-secondary hover:text-text-primary"
                     >
                       Cancel
                     </button>
                     <button
                       onClick={() => handleSave(prompt.id)}
                       disabled={saving || !inputValue.trim()}
-                      className="px-3 py-1 bg-accent/20 text-accent text-xs font-medium rounded-lg border border-accent/30 hover:bg-accent/30 disabled:opacity-40 flex items-center gap-1.5 min-h-[32px]"
+                      className="px-3 py-1 bg-accent/15 text-accent text-xs font-medium rounded-lg border border-accent/25 hover:bg-accent/25 disabled:opacity-40 flex items-center gap-1.5 min-h-[32px] transition-all"
                     >
                       {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
                       Save
@@ -363,6 +364,69 @@ function cleanDisplayText(raw: string): string {
     .trim();
 }
 
+// ─── Cloze deletion helpers ───
+function parseClozeText(raw: string): { segments: Array<{ type: 'text' | 'cloze'; content: string; group: number }>; hasCloze: boolean } {
+  const segments: Array<{ type: 'text' | 'cloze'; content: string; group: number }> = [];
+  const regex = /\{\{c(\d+)::([^}]+)\}\}/g;
+  let lastIndex = 0;
+  let match;
+  let hasCloze = false;
+  while ((match = regex.exec(raw)) !== null) {
+    hasCloze = true;
+    if (match.index > lastIndex) segments.push({ type: 'text', content: raw.slice(lastIndex, match.index), group: 0 });
+    segments.push({ type: 'cloze', content: match[2], group: parseInt(match[1], 10) });
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < raw.length) segments.push({ type: 'text', content: raw.slice(lastIndex), group: 0 });
+  return { segments, hasCloze };
+}
+
+function ClozeText({ text, revealed }: { text: string; revealed: boolean }) {
+  const { segments, hasCloze } = parseClozeText(text);
+  if (!hasCloze) return <span className="whitespace-pre-wrap">{cleanDisplayText(text)}</span>;
+  return (
+    <span className="whitespace-pre-wrap">
+      {segments.map((seg, i) => {
+        if (seg.type === 'text') return <span key={i}>{cleanDisplayText(seg.content)}</span>;
+        if (revealed) return <span key={i} className="font-bold text-accent underline decoration-accent/40">{seg.content}</span>;
+        return <span key={i} className="inline-block min-w-[3em] border-b-2 border-accent/50 text-accent/60 text-center mx-0.5">[...]</span>;
+      })}
+    </span>
+  );
+}
+
+// ─── Typing answer helpers ───
+function normalizeAnswer(s: string): string {
+  return s.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function levenshteinDist(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+function isCloseEnough(typed: string, expected: string): boolean {
+  const a = normalizeAnswer(typed), b = normalizeAnswer(expected);
+  if (a === b) return true;
+  if (b.length > 5 && levenshteinDist(a, b) <= 2) return true;
+  return false;
+}
+
+function getExpectedAnswer(card: CardFull): string {
+  for (const block of card.back.media_blocks) {
+    if (block.block_type === 'text' && block.text_content) return cleanDisplayText(block.text_content).split('\n')[0].trim();
+  }
+  return '';
+}
+
 function MediaBlockRenderer({ block, hasImage }: { block: MediaBlock; hasImage?: boolean }) {
   switch (block.block_type) {
     case 'text': {
@@ -379,7 +443,7 @@ function MediaBlockRenderer({ block, hasImage }: { block: MediaBlock; hasImage?:
       const hasMarkdown = text.includes('**');
       return (
         <div className="w-full">
-          <div className={`${textClass} text-gray-100 whitespace-pre-wrap break-words`}>
+          <div className={`${textClass} text-text-primary whitespace-pre-wrap break-words`}>
             {hasMarkdown ? renderMarkdownBold(text) : text}
           </div>
         </div>
@@ -459,6 +523,10 @@ export function StudyView() {
   const [wrongCardIds, setWrongCardIds] = useState<string[]>([]);
   const [filterSetId, setFilterSetId] = useState<string>(urlSetId || '');
   const [grading, setGrading] = useState(false);
+  // Typing mode state
+  const [typingInput, setTypingInput] = useState('');
+  const [typingResult, setTypingResult] = useState<'correct' | 'wrong' | null>(null);
+  const typingInputRef = useRef<HTMLInputElement>(null);
   const startTime = useRef<number>(0);
   const autoStarted = useRef(false);
   const restartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -474,6 +542,12 @@ export function StudyView() {
     setCurrentIndex(0);
     setFlipped(false);
   }, [selectedTopicId]);
+
+  // Reset typing state when card changes
+  useEffect(() => {
+    setTypingInput('');
+    setTypingResult(null);
+  }, [currentIndex]);
 
   // Auto-start when navigated from dashboard with ?set=xxx
   useEffect(() => {
@@ -818,52 +892,52 @@ export function StudyView() {
       <div className="max-w-lg mx-auto text-center py-12">
         <div className="card p-8">
           <GraduationCap className="w-16 h-16 mx-auto mb-4 text-accent" />
-          <h2 className="text-2xl font-heading font-bold text-white mb-2">Session Complete!</h2>
-          <p className="text-gray-400 mb-6">Great work on your study session.</p>
+          <h2 className="text-2xl font-heading font-bold text-text-primary mb-2">Session Complete!</h2>
+          <p className="text-text-secondary mb-6">Great work on your study session.</p>
 
           <div className="grid grid-cols-3 gap-4 mb-6">
             <div className="bg-surface-base rounded-lg p-3">
-              <p className="text-2xl font-bold font-mono text-white">{stats.reviewed}</p>
-              <p className="text-xs text-gray-500">Reviewed</p>
+              <p className="text-2xl font-bold font-mono text-text-primary">{stats.reviewed}</p>
+              <p className="text-xs text-text-tertiary">Reviewed</p>
             </div>
             <div className="bg-surface-base rounded-lg p-3">
-              <p className="text-2xl font-bold font-mono text-green-400">{stats.correct}</p>
-              <p className="text-xs text-gray-500">Correct</p>
+              <p className="text-2xl font-bold font-mono text-success">{stats.correct}</p>
+              <p className="text-xs text-text-tertiary">Correct</p>
             </div>
             <div className="bg-surface-base rounded-lg p-3">
-              <p className="text-2xl font-bold font-mono text-red-400">{stats.wrong}</p>
-              <p className="text-xs text-gray-500">Wrong</p>
+              <p className="text-2xl font-bold font-mono text-error">{stats.wrong}</p>
+              <p className="text-xs text-text-tertiary">Wrong</p>
             </div>
           </div>
 
           <div className="bg-surface-base rounded-lg p-4 mb-6">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-gray-400">Accuracy</span>
-              <span className="text-lg font-mono font-bold" style={{ color: accuracy >= 80 ? '#22c55e' : accuracy >= 50 ? '#f59e0b' : '#ef4444' }}>
+              <span className="text-sm text-text-secondary">Accuracy</span>
+              <span className="text-lg font-mono font-bold" style={{ color: accuracy >= 80 ? '#3d9a6e' : accuracy >= 50 ? '#c9943b' : '#c75a5a' }}>
                 {accuracy}%
               </span>
             </div>
             <div className="w-full bg-surface rounded-full h-2">
               <div
                 className="h-2 rounded-full transition-all"
-                style={{ width: `${accuracy}%`, backgroundColor: accuracy >= 80 ? '#22c55e' : accuracy >= 50 ? '#f59e0b' : '#ef4444' }}
+                style={{ width: `${accuracy}%`, backgroundColor: accuracy >= 80 ? '#3d9a6e' : accuracy >= 50 ? '#c9943b' : '#c75a5a' }}
               />
             </div>
           </div>
 
           {stats.slotChanges.length > 0 && (
             <div className="text-left mb-6">
-              <h3 className="text-sm font-semibold text-gray-400 mb-2">Tier Changes</h3>
+              <h3 className="text-sm font-semibold text-text-secondary mb-2">Tier Changes</h3>
               <div className="space-y-1">
                 {stats.slotChanges.map((tc, i) => (
                   <div key={i} className="flex items-center gap-2 text-sm">
                     <span className="font-mono" style={{ color: SLOT_COLORS[tc.from] }}>{SLOT_LABELS[tc.from]}</span>
-                    <ChevronRight className="w-3 h-3 text-gray-500" />
+                    <ChevronRight className="w-3 h-3 text-text-tertiary" />
                     <span className="font-mono" style={{ color: SLOT_COLORS[tc.to] }}>{SLOT_LABELS[tc.to]}</span>
                     {tc.to > tc.from ? (
-                      <span className="text-green-400 text-xs">promoted</span>
+                      <span className="text-success text-xs">promoted</span>
                     ) : (
-                      <span className="text-red-400 text-xs">demoted</span>
+                      <span className="text-error text-xs">demoted</span>
                     )}
                   </div>
                 ))}
@@ -903,8 +977,8 @@ export function StudyView() {
     const trancheNum = slot <= 3 ? 1 : slot <= 6 ? 2 : slot <= 9 ? 3 : slot <= 11 ? 4 : 5;
     const trancheNames: Record<number, string> = { 1: 'Immediate', 2: 'Short-Term', 3: 'Medium-Term', 4: 'Long-Term', 5: 'Mastery' };
 
-    const badgeColor = isOverdue ? 'border-red-500/40 bg-red-500/10' : isDue ? 'border-amber-500/40 bg-amber-500/10' : 'border-border bg-surface-base/50';
-    const textColor = isOverdue ? 'text-red-400' : isDue ? 'text-amber-400' : 'text-gray-500';
+    const badgeColor = isOverdue ? 'border-error/30 bg-error/8' : isDue ? 'border-warning/30 bg-warning/8' : 'border-border bg-surface-base/50';
+    const textColor = isOverdue ? 'text-error' : isDue ? 'text-warning' : 'text-text-tertiary';
 
     const fmtDate = (iso: string) => {
       const d = new Date(iso);
@@ -917,11 +991,11 @@ export function StudyView() {
         <div className={`text-[10px] font-mono leading-tight ${textColor}`}>
           {dueAt ? `Due: ${fmtDate(dueAt)}` : 'New card'}
         </div>
-        <div className="text-[10px] text-gray-500 leading-tight">
+        <div className="text-[10px] text-text-tertiary leading-tight">
           Slot {slot}/13 — {trancheNames[trancheNum]}
         </div>
         {graceDeadline && (
-          <div className="text-[10px] text-gray-600 leading-tight">
+          <div className="text-[10px] text-text-tertiary/70 leading-tight">
             Grace: {fmtDate(graceDeadline)}
           </div>
         )}
@@ -953,8 +1027,8 @@ export function StudyView() {
       <div className="max-w-lg mx-auto text-center py-12">
         <div className="card p-8">
           <GraduationCap className="w-16 h-16 mx-auto mb-4 text-accent" />
-          <h2 className="text-2xl font-heading font-bold text-white mb-2">{emptyTitle}</h2>
-          <p className="text-gray-400 mb-6">{emptyMsg}</p>
+          <h2 className="text-2xl font-heading font-bold text-text-primary mb-2">{emptyTitle}</h2>
+          <p className="text-text-secondary mb-6">{emptyMsg}</p>
           <button
             onClick={() => { setSessionActive(false); }}
             className="btn-primary flex items-center gap-2 mx-auto"
@@ -974,20 +1048,20 @@ export function StudyView() {
         {/* Progress bar */}
         <div className="flex items-center justify-between mb-3 sm:mb-4">
           <div className="flex items-center gap-2">
-            <span className="text-xs sm:text-sm text-gray-400 truncate max-w-[120px] sm:max-w-none">
+            <span className="text-xs sm:text-sm text-text-secondary truncate max-w-[120px] sm:max-w-none">
               {selectedTopic?.name || 'All Topics'}
             </span>
-            <span className="text-xs text-gray-600">|</span>
-            <span className="text-xs sm:text-sm font-mono text-gray-400">
+            <span className="text-xs text-text-tertiary">|</span>
+            <span className="text-xs sm:text-sm font-mono text-text-secondary">
               {currentIndex + 1}/{queue.length}
             </span>
           </div>
           <div className="flex items-center gap-2 sm:gap-4">
-            <span className="text-xs sm:text-sm text-green-400 font-mono">{stats.correct} ✓</span>
-            <span className="text-xs sm:text-sm text-red-400 font-mono">{stats.wrong} ✗</span>
+            <span className="text-xs sm:text-sm text-success font-mono">{stats.correct} ✓</span>
+            <span className="text-xs sm:text-sm text-error font-mono">{stats.wrong} ✗</span>
             <button
               onClick={() => { setSessionActive(false); setSessionComplete(false); }}
-              className="text-xs text-gray-500 hover:text-gray-300 active:text-gray-200"
+              className="text-xs text-text-tertiary hover:text-text-secondary active:text-text-primary"
             >
               End
             </button>
@@ -1038,16 +1112,74 @@ export function StudyView() {
               {/* Front content (scrolls if long) */}
               <div className="flex-1 overflow-y-auto flex flex-col justify-center space-y-3 min-h-[80px] text-center">
                 {(() => {
+                  const isCloze = (currentCard.card_type || 'standard') === 'cloze';
                   const hasImg = currentCard.front.media_blocks.some(b => b.block_type === 'image' || b.block_type === 'video');
-                  return currentCard.front.media_blocks.map((block) => (
-                    <MediaBlockRenderer key={block.id} block={block} hasImage={hasImg} />
-                  ));
+                  return currentCard.front.media_blocks.map((block) => {
+                    if (isCloze && block.block_type === 'text' && block.text_content) {
+                      const text = block.text_content;
+                      const textClass = hasImg ? 'text-[13px] sm:text-sm leading-snug' : text.length > 200 ? 'text-sm sm:text-base leading-snug' : 'text-base sm:text-lg leading-relaxed';
+                      return (
+                        <div key={block.id} className="w-full">
+                          <div className={`${textClass} text-gray-100`}>
+                            <ClozeText text={text} revealed={false} />
+                          </div>
+                        </div>
+                      );
+                    }
+                    return <MediaBlockRenderer key={block.id} block={block} hasImage={hasImg} />;
+                  });
                 })()}
               </div>
 
-              <div className="text-center mt-2 shrink-0">
-                <span className="text-xs text-gray-400">tap to flip</span>
-              </div>
+              {/* Bottom area: typing input or tap-to-flip hint */}
+              {(currentCard.card_type || 'standard') === 'typing' && !flipped ? (
+                <div className="mt-3 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  {typingResult === null ? (
+                    <div className="flex gap-2">
+                      <input
+                        ref={typingInputRef}
+                        type="text"
+                        value={typingInput}
+                        onChange={(e) => setTypingInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && typingInput.trim()) {
+                            const expected = getExpectedAnswer(currentCard);
+                            const correct = isCloseEnough(typingInput, expected);
+                            setTypingResult(correct ? 'correct' : 'wrong');
+                            handleGrade(correct ? 'correct' : 'wrong');
+                          }
+                        }}
+                        placeholder="Type your answer..."
+                        className="flex-1 bg-surface-base border border-border rounded-lg px-3 py-2.5 text-sm text-gray-200 placeholder-gray-500 focus:border-accent focus:outline-none"
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => {
+                          if (!typingInput.trim()) return;
+                          const expected = getExpectedAnswer(currentCard);
+                          const correct = isCloseEnough(typingInput, expected);
+                          setTypingResult(correct ? 'correct' : 'wrong');
+                          handleGrade(correct ? 'correct' : 'wrong');
+                        }}
+                        className="px-4 py-2.5 bg-accent/20 text-accent border border-accent/30 rounded-lg font-medium text-sm hover:bg-accent/30 transition-colors"
+                      >
+                        Check
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className={`text-center py-2 rounded-lg font-medium ${typingResult === 'correct' ? 'bg-green-600/20 text-green-400 border border-green-600/30' : 'bg-red-600/20 text-red-400 border border-red-600/30'}`}>
+                        {typingResult === 'correct' ? 'Correct!' : `Wrong — the answer was: ${getExpectedAnswer(currentCard)}`}
+                      </div>
+                      <div className="text-xs text-gray-500 text-center">Your answer: {typingInput}</div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center mt-2 shrink-0">
+                  <span className="text-xs text-text-tertiary">tap to flip</span>
+                </div>
+              )}
             </div>
 
             {/* BACK FACE */}
@@ -1058,48 +1190,68 @@ export function StudyView() {
                 transform: 'rotateY(180deg)',
               }}
             >
-              <div className="text-xs uppercase tracking-wider text-gray-500 mb-2 text-center shrink-0">Answer</div>
+              <div className="text-xs uppercase tracking-wider text-text-tertiary mb-2 text-center shrink-0">Answer</div>
 
               {/* Back content (scrolls if long) */}
               <div className="flex-1 overflow-y-auto flex flex-col items-start space-y-3 min-h-[80px]">
                 {(() => {
+                  const isCloze = (currentCard.card_type || 'standard') === 'cloze';
                   const hasImg = currentCard.back.media_blocks.some(b => b.block_type === 'image' || b.block_type === 'video');
+                  if (isCloze) {
+                    // For cloze cards, show the front text with answers revealed on the back
+                    return currentCard.front.media_blocks.map((block) => {
+                      if (block.block_type === 'text' && block.text_content) {
+                        const text = block.text_content;
+                        const textClass = hasImg ? 'text-[13px] sm:text-sm leading-snug' : text.length > 200 ? 'text-sm sm:text-base leading-snug' : 'text-base sm:text-lg leading-relaxed';
+                        return (
+                          <div key={block.id} className="w-full">
+                            <div className={`${textClass} text-gray-100`}>
+                              <ClozeText text={text} revealed={true} />
+                            </div>
+                          </div>
+                        );
+                      }
+                      return <MediaBlockRenderer key={block.id} block={block} hasImage={hasImg} />;
+                    });
+                  }
                   return currentCard.back.media_blocks.map((block) => (
                     <MediaBlockRenderer key={block.id} block={block} hasImage={hasImg} />
                   ));
                 })()}
               </div>
 
-              {/* Correct / Wrong buttons */}
-              <div className="border-t border-border mt-3 pt-3 shrink-0">
-                <div className="flex gap-3">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleGrade('wrong'); }}
-                    disabled={grading}
-                    className={`flex-1 bg-red-600/20 hover:bg-red-600/30 active:bg-red-600/40 text-red-400 border border-red-600/30 px-4 py-4 sm:py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 active:scale-[0.98] ${grading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    <X className="w-5 h-5" />
-                    Wrong
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleGrade('correct'); }}
-                    disabled={grading}
-                    className={`flex-1 bg-green-600/20 hover:bg-green-600/30 active:bg-green-600/40 text-green-400 border border-green-600/30 px-4 py-4 sm:py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 active:scale-[0.98] ${grading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    <Check className="w-5 h-5" />
-                    Correct
-                  </button>
+              {/* Correct / Wrong buttons — hidden for typing cards (already auto-graded) */}
+              {(currentCard.card_type || 'standard') !== 'typing' && (
+                <div className="border-t border-border/50 mt-3 pt-3 shrink-0">
+                  <div className="flex gap-3">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleGrade('wrong'); }}
+                      disabled={grading}
+                      className={`flex-1 bg-error/12 hover:bg-error/20 active:bg-error/28 text-error border border-error/20 hover:border-error/35 px-4 py-4 sm:py-3 rounded-lg font-medium transition-all flex items-center justify-center gap-2 active:scale-[0.97] ${grading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      <X className="w-5 h-5" />
+                      Wrong
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleGrade('correct'); }}
+                      disabled={grading}
+                      className={`flex-1 bg-success/12 hover:bg-success/20 active:bg-success/28 text-success border border-success/20 hover:border-success/35 px-4 py-4 sm:py-3 rounded-lg font-medium transition-all flex items-center justify-center gap-2 active:scale-[0.97] ${grading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      <Check className="w-5 h-5" />
+                      Correct
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
 
         {/* Keyboard hint */}
-        <p className="text-center text-xs text-gray-600 mt-4 hidden sm:block">
+        <p className="text-center text-xs text-text-tertiary mt-4 hidden sm:block">
           Space = flip • 1 = wrong • 2 = correct
         </p>
-        <p className="text-center text-xs text-gray-600 mt-3 sm:hidden">
+        <p className="text-center text-xs text-text-tertiary mt-3 sm:hidden">
           Tap card to flip • Grade your answer
         </p>
       </div>
@@ -1111,8 +1263,8 @@ export function StudyView() {
     <div className="max-w-6xl mx-auto pb-40">
       <div className="text-center mb-6">
         <GraduationCap className="w-10 h-10 mx-auto mb-2 text-accent" />
-        <h2 className="text-2xl font-heading font-bold text-white">Study Session</h2>
-        <p className="text-gray-400 mt-1 text-sm">
+        <h2 className="text-2xl font-heading font-bold text-text-primary">Study Session</h2>
+        <p className="text-text-secondary mt-1 text-sm">
           {selectedTopic ? `Filtered: ${selectedTopic.name}` : 'Tap a tranche to expand, tap cards to select'}
         </p>
       </div>
@@ -1124,7 +1276,7 @@ export function StudyView() {
         onStartSelected={(ids) => startSession(ids)}
       />
 
-      <div className="border-t border-border my-6" />
+      <div className="border-t border-border/40 my-6" />
 
       {/* Mode Selection */}
       <div className="grid grid-cols-2 gap-3 mb-6">
@@ -1136,21 +1288,21 @@ export function StudyView() {
           <button
             key={id}
             onClick={() => setMode(id)}
-            className={`card text-left p-4 transition-colors ${
-              mode === id ? 'border-accent bg-accent/5' : 'hover:border-accent/30'
+            className={`card text-left p-4 transition-all ${
+              mode === id ? 'border-accent/40 bg-accent/5' : 'hover:border-border'
             }`}
           >
             <div className="flex items-center gap-2 mb-1">
               <Icon className="w-4 h-4 text-accent" />
-              <span className="font-medium text-white text-sm">{label}</span>
+              <span className="font-medium text-text-primary text-sm">{label}</span>
             </div>
-            <p className="text-xs text-gray-500">{desc}</p>
+            <p className="text-xs text-text-tertiary">{desc}</p>
           </button>
         ))}
       </div>
 
       {mode === 'new' && !selectedTopicId ? (
-        <div className="text-center text-gray-400 text-sm py-4 border border-border rounded-lg bg-surface-base">
+        <div className="text-center text-text-secondary text-sm py-4 border border-border/60 rounded-lg bg-surface-base">
           Select a topic from the sidebar to learn new cards.
         </div>
       ) : (

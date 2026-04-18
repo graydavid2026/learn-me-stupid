@@ -11,6 +11,8 @@ import cardsRouter from './routes/cards.js';
 import mediaRouter from './routes/media.js';
 import studyRouter from './routes/study.js';
 import searchRouter from './routes/search.js';
+import exportRouter from './routes/export.js';
+import importRouter from './routes/import.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -32,7 +34,7 @@ app.use(helmet({
   },
 }));
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use('/api/topics', topicsRouter);
@@ -41,6 +43,8 @@ app.use('/api', cardsRouter);
 app.use('/api/media', mediaRouter);
 app.use('/api/study', studyRouter);
 app.use('/api/search', searchRouter);
+app.use('/api/export', exportRouter);
+app.use('/api/import', importRouter);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

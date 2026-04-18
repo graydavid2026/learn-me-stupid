@@ -66,7 +66,7 @@ router.get('/cards/:id', (req, res) => {
 router.post('/sets/:setId/cards', (req, res) => {
   try {
     const { setId } = req.params;
-    const { tags, front, back } = req.body;
+    const { tags, front, back, card_type } = req.body;
 
     // Verify set exists
     const set = queryOne('SELECT id FROM card_sets WHERE id = ?', [setId]);
@@ -78,10 +78,12 @@ router.post('/sets/:setId/cards', (req, res) => {
       [setId]
     );
 
+    const validCardType = ['standard', 'cloze', 'typing'].includes(card_type) ? card_type : 'standard';
+
     // Create card
     run(
-      `INSERT INTO cards (id, card_set_id, sort_order, tags) VALUES (?, ?, ?, ?)`,
-      [cardId, setId, maxOrder.next, JSON.stringify(tags || [])]
+      `INSERT INTO cards (id, card_set_id, sort_order, tags, card_type) VALUES (?, ?, ?, ?, ?)`,
+      [cardId, setId, maxOrder.next, JSON.stringify(tags || []), validCardType]
     );
 
     // Create front side
@@ -136,17 +138,24 @@ router.post('/sets/:setId/cards', (req, res) => {
 router.put('/cards/:id', (req, res) => {
   try {
     const { id } = req.params;
-    const { tags, front, back } = req.body;
+    const { tags, front, back, card_type } = req.body;
 
     const existing = queryOne('SELECT * FROM cards WHERE id = ?', [id]);
     if (!existing) return res.status(404).json({ error: 'Card not found' });
 
     // Update card metadata
+    const updates: string[] = ["updated_at = datetime('now')"];
+    const params: any[] = [];
     if (tags !== undefined) {
-      run('UPDATE cards SET tags = ?, updated_at = datetime(\'now\') WHERE id = ?', [JSON.stringify(tags), id]);
-    } else {
-      run('UPDATE cards SET updated_at = datetime(\'now\') WHERE id = ?', [id]);
+      updates.push('tags = ?');
+      params.push(JSON.stringify(tags));
     }
+    if (card_type !== undefined && ['standard', 'cloze', 'typing'].includes(card_type)) {
+      updates.push('card_type = ?');
+      params.push(card_type);
+    }
+    params.push(id);
+    run(`UPDATE cards SET ${updates.join(', ')} WHERE id = ?`, params);
 
     // Update media blocks within a transaction to prevent partial writes
     const d = getDb();

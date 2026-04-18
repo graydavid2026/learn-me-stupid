@@ -12,9 +12,141 @@ import { useStore } from '../../stores/useStore';
 import { InfoTooltip } from '../ui/InfoTooltip';
 import { SLOT_COLORS, HEAT_COLORS, getAccuracyHeat, getStreakHeat, fmt } from '../../utils/formatters';
 
+// ─── Daily Goal helpers ─────────────────────────────────────────────────────
+
+function getDailyGoal(): number {
+  try {
+    const raw = localStorage.getItem('lms.dailyGoal');
+    const n = raw == null ? 20 : Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : 20;
+  } catch { return 20; }
+}
+
+function setDailyGoalStorage(n: number) {
+  try { localStorage.setItem('lms.dailyGoal', String(Math.max(1, Math.floor(n)))); } catch {}
+}
+
+// ─── Best streak helpers ────────────────────────────────────────────────────
+
+function getBestStreak(): number {
+  try {
+    const raw = localStorage.getItem('lms.bestStreak');
+    return raw ? Number(raw) || 0 : 0;
+  } catch { return 0; }
+}
+
+function updateBestStreak(current: number): number {
+  const best = Math.max(getBestStreak(), current);
+  try { localStorage.setItem('lms.bestStreak', String(best)); } catch {}
+  return best;
+}
+
+// ─── Daily Goal Card ────────────────────────────────────────────────────────
+
+function DailyGoalCard({ reviewed, goal, onGoalChange }: {
+  reviewed: number; goal: number; onGoalChange: (n: number) => void;
+}) {
+  const pct = Math.min(100, Math.round((reviewed / goal) * 100));
+  const goalReached = reviewed >= goal;
+  const radius = 28;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (pct / 100) * circumference;
+
+  return (
+    <div className="card p-3 sm:p-4 text-left">
+      <div className="flex items-center gap-1.5 mb-1.5">
+        <Target className="w-3.5 h-3.5 text-text-tertiary" />
+        <span className="text-[10px] sm:text-xs text-text-secondary uppercase tracking-wider">Daily Goal</span>
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="relative w-16 h-16 shrink-0">
+          <svg className="w-16 h-16 -rotate-90" viewBox="0 0 64 64">
+            <circle cx="32" cy="32" r={radius} fill="none" stroke="#151720" strokeWidth="5" />
+            <circle
+              cx="32" cy="32" r={radius} fill="none"
+              stroke={goalReached ? '#3d9a6e' : '#d4a853'}
+              strokeWidth="5"
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={strokeDashoffset}
+              className="transition-all duration-500"
+            />
+          </svg>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="text-xs font-mono font-bold text-text-primary">{pct}%</span>
+          </div>
+        </div>
+        <div>
+          <p className="text-lg font-bold font-mono text-text-primary">{reviewed}<span className="text-text-tertiary text-sm">/{goal}</span></p>
+          {goalReached ? (
+            <p className="text-xs font-medium text-success">Goal reached!</p>
+          ) : (
+            <p className="text-xs text-text-tertiary">{goal - reviewed} more to go</p>
+          )}
+          <button
+            onClick={() => {
+              const input = prompt('Set daily card goal:', String(goal));
+              if (input) {
+                const n = parseInt(input, 10);
+                if (n > 0) onGoalChange(n);
+              }
+            }}
+            className="text-[10px] text-text-tertiary hover:text-text-secondary mt-0.5"
+          >
+            edit goal
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Streak Display (prominent) ─────────────────────────────────────────────
+
+function StreakDisplay({ streak, bestStreak }: { streak: number; bestStreak: number }) {
+  const heat = getStreakHeat(streak);
+  const color = HEAT_COLORS[heat];
+
+  return (
+    <div className="card p-3 sm:p-4 text-left">
+      <div className="flex items-center gap-1.5 mb-1.5">
+        <Flame className="w-3.5 h-3.5 text-text-tertiary" />
+        <span className="text-[10px] sm:text-xs text-text-secondary uppercase tracking-wider">Streak</span>
+      </div>
+      <div className="flex items-center gap-3">
+        {/* Fire visual — CSS triangle/shape */}
+        <div className="relative w-10 h-12 shrink-0 flex items-end justify-center">
+          <div
+            className="w-6 h-8 rounded-full"
+            style={{
+              background: `radial-gradient(ellipse at bottom, ${color} 0%, ${color}88 40%, transparent 70%)`,
+              filter: 'blur(1px)',
+            }}
+          />
+          <div
+            className="absolute bottom-0.5 w-3 h-5 rounded-full"
+            style={{
+              background: `radial-gradient(ellipse at bottom, #fbbf24 0%, ${color}aa 60%, transparent 80%)`,
+            }}
+          />
+        </div>
+        <div>
+          <p className="text-2xl font-bold font-mono" style={{ color }}>
+            {streak}
+            <span className="text-sm text-text-tertiary ml-1">day{streak !== 1 ? 's' : ''}</span>
+          </p>
+          <p className="text-[10px] text-text-tertiary">
+            Best: {bestStreak} day{bestStreak !== 1 ? 's' : ''}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const SLOT_LABELS: Record<number, string> = {
-  0: 'New', 1: '5m', 2: '1h', 3: '4h', 4: '1d', 5: '2d', 6: '1w',
-  7: '2w', 8: '4w', 9: '8w', 10: '3mo', 11: '6mo', 12: '9mo', 13: '1yr',
+  0: 'New', 1: '10m', 2: '1h', 3: '4h', 4: '1d', 5: '3d', 6: '1w',
+  7: '2w', 8: '1mo', 9: '2mo', 10: '4mo', 11: '8mo', 12: '1yr', 13: '2yr',
 };
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -38,7 +170,7 @@ const TRANCHE_NAMES: Record<number, string> = {
 };
 
 const TRANCHE_COLORS: Record<number, string> = {
-  1: '#ef4444', 2: '#f59e0b', 3: '#22c55e', 4: '#3b82f6', 5: '#a855f7',
+  1: '#c75a5a', 2: '#c9943b', 3: '#3d9a6e', 4: '#5b8a9a', 5: '#8a6a9a',
 };
 
 interface WeekDay {
@@ -86,14 +218,14 @@ function StatCard({ icon: Icon, label, value, color, tooltip, onClick, urgent }:
     <button
       onClick={onClick}
       disabled={!onClick}
-      className={`card p-3 sm:p-4 text-left transition-all ${onClick ? 'hover:border-accent/40 active:scale-[0.98] cursor-pointer' : ''} ${urgent ? 'border-red-500/30 bg-red-500/[0.03]' : ''}`}
+      className={`card p-3 sm:p-4 text-left transition-all ${onClick ? 'hover:border-accent/30 active:scale-[0.98] cursor-pointer' : ''} ${urgent ? 'border-error/25 bg-error/[0.03]' : ''}`}
     >
       <div className="flex items-center gap-1.5 mb-1.5">
-        <Icon className="w-3.5 h-3.5 text-gray-500" />
-        <span className="text-[10px] sm:text-xs text-gray-400 uppercase tracking-wider">{label}</span>
+        <Icon className="w-3.5 h-3.5 text-text-tertiary" />
+        <span className="text-[10px] sm:text-xs text-text-secondary uppercase tracking-wider">{label}</span>
         {tooltip && <InfoTooltip fieldId={tooltip} />}
       </div>
-      <p className="text-xl sm:text-2xl font-bold font-mono" style={{ color: color || '#e5e7eb' }}>{value}</p>
+      <p className="text-xl sm:text-2xl font-bold font-mono" style={{ color: color || '#e4e4e7' }}>{value}</p>
     </button>
   );
 }
@@ -106,14 +238,14 @@ function TopicCard({ topic, onClick }: { topic: TopicForecast; onClick: () => vo
   return (
     <button
       onClick={onClick}
-      className="card p-4 text-left hover:border-accent/40 active:scale-[0.98] transition-all cursor-pointer w-full"
+      className="card p-4 text-left hover:border-accent/30 active:scale-[0.98] transition-all cursor-pointer w-full"
     >
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2 min-w-0">
           <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: topic.color }} />
-          <h3 className="font-medium text-white text-sm truncate">{topic.name}</h3>
+          <h3 className="font-medium text-text-primary text-sm truncate">{topic.name}</h3>
         </div>
-        <ChevronRight className="w-4 h-4 text-gray-600 shrink-0" />
+        <ChevronRight className="w-4 h-4 text-text-tertiary shrink-0" />
       </div>
 
       {/* Due count with tranche breakdown */}
@@ -350,6 +482,16 @@ export function DashboardView() {
   const totalDueAllTopics = forecast.topics.reduce((sum, t) => sum + t.due_now, 0);
   const totalOverdue = forecast.topics.reduce((sum, t) => sum + t.overdue, 0);
 
+  // Daily goal
+  const [dailyGoal, setDailyGoalState] = useState(getDailyGoal);
+  const handleGoalChange = (n: number) => {
+    setDailyGoalStorage(n);
+    setDailyGoalState(n);
+  };
+
+  // Best streak
+  const bestStreak = updateBestStreak(stats.streak);
+
   // Slot distribution for charts
   const slotData = Array.from({ length: 14 }, (_, i) => {
     const found = stats.slotDistribution.find((s) => s.slot === i);
@@ -405,11 +547,13 @@ export function DashboardView() {
       )}
 
       {/* Overview Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-4 sm:mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3 mb-4 sm:mb-6">
+        <DailyGoalCard reviewed={stats.reviewsToday} goal={dailyGoal} onGoalChange={handleGoalChange} />
+        <StreakDisplay streak={stats.streak} bestStreak={bestStreak} />
         <StatCard icon={Clock} label="Due Now" value={stats.dueToday} color={stats.dueToday > 0 ? '#f59e0b' : '#22c55e'} tooltip="due-today" onClick={stats.dueToday > 0 ? goStudy : undefined} urgent={stats.dueToday > 10} />
-        <StatCard icon={Flame} label="Streak" value={fmt.streak(stats.streak)} color={HEAT_COLORS[getStreakHeat(stats.streak)]} tooltip="streak" />
         <StatCard icon={BarChart3} label="Accuracy" value={fmt.pct(accuracy)} color={HEAT_COLORS[getAccuracyHeat(accuracy)]} tooltip="accuracy" />
         <StatCard icon={Target} label="Mastered" value={stats.mastered} color="#22c55e" tooltip="mastered" />
+        <StatCard icon={BookOpen} label="Total Cards" value={stats.total} color="#e5e7eb" />
       </div>
 
       {/* Week Forecast + Quick Stats */}

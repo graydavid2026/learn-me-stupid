@@ -1,4 +1,4 @@
-// Spaced Repetition Engine — 13-Slot System
+// Spaced Repetition Engine — 13-Slot System with In-Session Learning + SM-2 Ease
 // Reference: docs/spaced-repetition-spec.md
 // Timezone: America/Indiana/Indianapolis
 
@@ -9,27 +9,33 @@ const DAY = 24 * HOUR;
 const WEEK = 7 * DAY;
 
 // Slot intervals in milliseconds
+// Slot 1: Learning (in-session re-test, 10 min nominal — but the real
+//         mechanism is that slot-1 cards are re-served within the same
+//         study session. If the session ends first, they auto-graduate
+//         to slot 4 on next startup.)
+// Slots 2-3: Retired / unused (kept for historical review-log entries)
+// Slots 4-13: Review phase (exponential growth)
 export const SLOT_INTERVALS_MS: Record<number, number> = {
-  1: 5 * 60 * 1000,       // 5 minutes
-  2: 1 * HOUR,            // 1 hour
-  3: 4 * HOUR,            // 4 hours
-  4: 1 * DAY,             // 24 hours
-  5: 2 * DAY,             // 48 hours
-  6: 1 * WEEK,            // 1 week
-  7: 2 * WEEK,            // 2 weeks
-  8: 4 * WEEK,            // 4 weeks
-  9: 8 * WEEK,            // 8 weeks
-  10: 90 * DAY,           // 3 months
-  11: 180 * DAY,          // 6 months
-  12: 270 * DAY,          // 9 months
-  13: 365 * DAY,          // 1 year
+  1: 10 * 60 * 1000,         // 10 minutes (in-session re-test)
+  2: 1 * HOUR,               // (retired)
+  3: 4 * HOUR,               // (retired)
+  4: 1 * DAY,                // 1 day
+  5: 3 * DAY,                // 3 days
+  6: 1 * WEEK,               // 1 week
+  7: 2 * WEEK,               // 2 weeks
+  8: 4 * WEEK,               // 1 month
+  9: 8 * WEEK,               // 2 months
+  10: 120 * DAY,             // 4 months
+  11: 240 * DAY,             // 8 months
+  12: 365 * DAY,             // 1 year
+  13: 730 * DAY,             // 2 years
 };
 
 // Grace periods per slot in milliseconds
 export const SLOT_GRACE_MS: Record<number, number> = {
   1: 2 * HOUR,            // 2 hours
-  2: 2 * HOUR,            // 2 hours
-  3: 2 * HOUR,            // 2 hours
+  2: 2 * HOUR,            // (retired)
+  3: 2 * HOUR,            // (retired)
   4: 1 * DAY,             // 24 hours
   5: 1 * DAY,             // 24 hours
   6: 1 * DAY,             // 24 hours
@@ -44,7 +50,7 @@ export const SLOT_GRACE_MS: Record<number, number> = {
 
 // Tranche assignments
 export const SLOT_TRANCHE: Record<number, number> = {
-  1: 1, 2: 1, 3: 1,                     // Immediate Recall
+  1: 1, 2: 1, 3: 1,                     // Learning / Immediate Recall
   4: 2, 5: 2, 6: 2,                     // Short-Term
   7: 3, 8: 3, 9: 3,                     // Medium-Term
   10: 4, 11: 4,                          // Long-Term
@@ -52,7 +58,7 @@ export const SLOT_TRANCHE: Record<number, number> = {
 };
 
 export const TRANCHE_NAMES: Record<number, string> = {
-  1: 'Immediate Recall',
+  1: 'Learning',
   2: 'Short-Term',
   3: 'Medium-Term',
   4: 'Long-Term',
@@ -61,20 +67,24 @@ export const TRANCHE_NAMES: Record<number, string> = {
 
 export const SLOT_LABELS: Record<number, string> = {
   0: 'New',
-  1: '5m', 2: '1h', 3: '4h',
-  4: '1d', 5: '2d', 6: '1w',
-  7: '2w', 8: '4w', 9: '8w',
-  10: '3mo', 11: '6mo',
-  12: '9mo', 13: '1yr',
+  1: '10m', 2: '1h', 3: '4h',
+  4: '1d', 5: '3d', 6: '1w',
+  7: '2w', 8: '1mo', 9: '2mo',
+  10: '4mo', 11: '8mo',
+  12: '1yr', 13: '2yr',
 };
 
-// Slots 1–3 (5m / 1h / 4h) are retired — the minimum interval is 1 day.
-// A correct answer on a new card promotes straight to slot 4; wrong
-// answers on existing cards floor at slot 4 instead of cascading to
-// sub-day intervals. Slots 1–3 remain in SLOT_INTERVALS_MS for
-// historical review-log entries only.
+// Slot 1 is the in-session learning slot. Slots 2-3 are retired.
+export const LEARNING_SLOT = 1;
+
+// Review slots (the main SR cycle — 1 day and beyond)
 export const MIN_SLOT = 4;
 export const MAX_SLOT = 13;
+
+// Default ease factor for new cards (SM-2 standard)
+export const DEFAULT_EASE = 2.5;
+// Floor — ease never drops below this
+export const MIN_EASE = 1.3;
 
 /** Get current time in Indiana */
 export function nowIndiana(): Date {
@@ -86,16 +96,25 @@ export function todayIndiana(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: TZ });
 }
 
-/** Calculate next due date from now + slot interval */
-export function calculateNextDue(slot: number): string {
-  const interval = SLOT_INTERVALS_MS[Math.min(Math.max(slot, MIN_SLOT), MAX_SLOT)];
+/** Calculate next due date from now + slot interval, with optional ease scaling for slots 5+ */
+export function calculateNextDue(slot: number, ease?: number): string {
+  const clampedSlot = Math.max(slot, 1);
+  const baseInterval = SLOT_INTERVALS_MS[Math.min(clampedSlot, MAX_SLOT)];
+
+  // Apply ease factor scaling for review slots 5+ (slot 4 is always 1 day)
+  let interval = baseInterval;
+  if (slot >= 5 && ease !== undefined) {
+    interval = Math.round(baseInterval * (ease / DEFAULT_EASE));
+  }
+
   return new Date(Date.now() + interval).toISOString();
 }
 
 /** Calculate grace deadline = dueDate + grace period for the slot */
 export function calculateGraceDeadline(nextDueAt: string, slot: number): string {
   const dueMs = new Date(nextDueAt).getTime();
-  const grace = SLOT_GRACE_MS[Math.min(Math.max(slot, MIN_SLOT), MAX_SLOT)];
+  const clampedSlot = Math.max(slot, 1);
+  const grace = SLOT_GRACE_MS[Math.min(clampedSlot, MAX_SLOT)];
   return new Date(dueMs + grace).toISOString();
 }
 
@@ -109,14 +128,15 @@ export function isDue(nextDueAt: string | null): boolean {
 export function isPastGrace(nextDueAt: string | null, slot: number): boolean {
   if (!nextDueAt || slot <= 0) return false;
   const dueMs = new Date(nextDueAt).getTime();
-  const grace = SLOT_GRACE_MS[Math.min(Math.max(slot, MIN_SLOT), MAX_SLOT)];
+  const clampedSlot = Math.max(slot, 1);
+  const grace = SLOT_GRACE_MS[Math.min(clampedSlot, MAX_SLOT)];
   return Date.now() > dueMs + grace;
 }
 
 /**
  * Cascade regression for a card that has been neglected.
  * Steps down one slot at a time, recalculating from each slot,
- * until the card is within a valid grace window or hits Slot 1.
+ * until the card is within a valid grace window or hits the floor.
  *
  * Returns the new slot after all regressions.
  */
@@ -133,21 +153,43 @@ export function calculateCascadeRegression(currentSlot: number, nextDueAt: strin
     const graceDeadline = dueMs + grace;
 
     if (now <= graceDeadline) {
-      // Within grace window for this slot — stop regressing
       break;
     }
 
-    // Past grace deadline — regress one slot
     slot--;
-
-    // Recalculate due date as if the regression happened at the grace deadline
-    // New due = graceDeadline + new slot's interval
+    // Skip retired slots 2-3
+    if (slot > LEARNING_SLOT && slot < MIN_SLOT) slot = MIN_SLOT;
     const newInterval = SLOT_INTERVALS_MS[slot] || SLOT_INTERVALS_MS[MIN_SLOT];
     dueMs = graceDeadline + newInterval;
   }
 
-  // If we're at slot 1 and still past grace, stay at slot 1 (floor rule)
   return Math.max(slot, MIN_SLOT);
+}
+
+/**
+ * Calculate SM-2 quality score from review result and response time.
+ * - Correct + fast (< 3s): quality 5 (perfect recall)
+ * - Correct + slow (>= 3s): quality 4 (correct with hesitation)
+ * - Wrong: quality 1
+ */
+function calculateQuality(result: 'correct' | 'wrong', responseTimeMs?: number | null): number {
+  if (result === 'wrong') return 1;
+  if (responseTimeMs !== undefined && responseTimeMs !== null && responseTimeMs < 3000) return 5;
+  return 4;
+}
+
+/**
+ * Update ease factor using SM-2 formula.
+ * On correct: ease + 0.1 - (5 - q) * (0.08 + (5 - q) * 0.02)
+ * On wrong: ease - 0.2
+ * Floor at MIN_EASE (1.3)
+ */
+function updateEase(currentEase: number, result: 'correct' | 'wrong', quality: number): number {
+  if (result === 'wrong') {
+    return Math.max(MIN_EASE, currentEase - 0.2);
+  }
+  const newEase = currentEase + 0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02);
+  return Math.max(MIN_EASE, newEase);
 }
 
 export interface ReviewResult {
@@ -156,71 +198,106 @@ export interface ReviewResult {
   graceDeadline: string | null;
   scheduleLocked: boolean;
   reviewType: 'standard' | 'early';
+  easeAfter: number;
 }
 
 /**
  * Process a review event.
  *
- * Rules from spec:
+ * Learning phase (once-a-day user design):
+ * - New card (slot 0) correct → slot 1 (in-session re-test, due in 10 min)
+ * - New card (slot 0) wrong → stay at slot 0 (try again next session)
+ * - Slot 1 correct → graduate to slot 4 (1 day — enters review cycle)
+ * - Slot 1 wrong → back to slot 0 (demote to new-card pool)
+ * - If a slot-1 card's session ends before re-test, the study route
+ *   auto-graduates it to slot 4 on next load.
+ *
+ * Review phase (slots 4+):
  * - Correct within grace → advance to next slot
- * - Correct AFTER grace expired → regress one slot, restart clock
- * - Wrong at any time → regress one slot, restart clock
+ * - Correct AFTER grace → regress one slot (floor at slot 4)
+ * - Wrong → regress one slot (floor at slot 4)
  * - Early review (not yet due) → log but don't alter schedule
+ *
+ * Ease factor updated on every review via SM-2 formula.
  */
 export function processReview(
   result: 'correct' | 'wrong',
   currentSlot: number,
-  nextDueAt: string | null
+  nextDueAt: string | null,
+  currentEase?: number,
+  responseTimeMs?: number | null,
 ): ReviewResult {
-  const now = Date.now();
+  const ease = currentEase ?? DEFAULT_EASE;
+  const quality = calculateQuality(result, responseTimeMs);
   const cardIsDue = isDue(nextDueAt);
-  const isNew = currentSlot === 0; // Never been reviewed
+  const isNew = currentSlot === 0;
+  const isLearning = currentSlot === LEARNING_SLOT;
 
-  // Early review — card not yet due
-  if (!isNew && !cardIsDue) {
+  // Early review — card not yet due (only for review-phase cards, not learning)
+  if (!isNew && !isLearning && !cardIsDue) {
     return {
       newSlot: currentSlot,
       nextDueAt: nextDueAt!,
       graceDeadline: calculateGraceDeadline(nextDueAt!, currentSlot),
       scheduleLocked: true,
       reviewType: 'early',
+      easeAfter: ease,
     };
   }
 
   let newSlot: number;
+  let newEase = ease;
 
   if (isNew) {
     if (result === 'correct') {
-      // First correct → enter the SR cycle at slot 4 (1d).
-      newSlot = MIN_SLOT;
+      // First correct → slot 1 (in-session re-test)
+      newSlot = LEARNING_SLOT;
+      newEase = updateEase(ease, result, quality);
     } else {
-      // Wrong on a new card — stay at slot 0, no schedule yet. The card
-      // remains in the "Learn New" pool. The user must get it right at
-      // least once before it advances into the review cycle.
+      // Wrong on a new card — stay at slot 0
       return {
         newSlot: 0,
         nextDueAt: null,
         graceDeadline: null,
         scheduleLocked: false,
         reviewType: 'standard',
+        easeAfter: updateEase(ease, result, quality),
       };
     }
-  } else if (result === 'correct') {
-    // Check if within grace period
-    const pastGrace = isPastGrace(nextDueAt, currentSlot);
-    if (pastGrace) {
-      // Correct but too late — regress one slot
-      newSlot = Math.max(currentSlot - 1, MIN_SLOT);
+  } else if (isLearning) {
+    // In-session learning re-test
+    newEase = updateEase(ease, result, quality);
+    if (result === 'correct') {
+      // Graduate to review cycle at slot 4 (1 day)
+      newSlot = MIN_SLOT;
     } else {
-      // Correct within grace — advance
-      newSlot = Math.min(currentSlot + 1, MAX_SLOT);
+      // Wrong during learning → back to slot 0 (new card pool)
+      return {
+        newSlot: 0,
+        nextDueAt: null,
+        graceDeadline: null,
+        scheduleLocked: false,
+        reviewType: 'standard',
+        easeAfter: newEase,
+      };
     }
   } else {
-    // Wrong — regress one slot
-    newSlot = Math.max(currentSlot - 1, MIN_SLOT);
+    // Review phase (slots 4+)
+    newEase = updateEase(ease, result, quality);
+    if (result === 'correct') {
+      const pastGrace = isPastGrace(nextDueAt, currentSlot);
+      if (pastGrace) {
+        newSlot = Math.max(currentSlot - 1, MIN_SLOT);
+      } else {
+        newSlot = Math.min(currentSlot + 1, MAX_SLOT);
+      }
+    } else {
+      // Wrong — regress one slot, floor at MIN_SLOT (4)
+      newSlot = Math.max(currentSlot - 1, MIN_SLOT);
+    }
   }
 
-  const newNextDueAt = calculateNextDue(newSlot);
+  const newNextDueAt = calculateNextDue(newSlot, newEase);
   const newGraceDeadline = calculateGraceDeadline(newNextDueAt, newSlot);
 
   return {
@@ -229,5 +306,6 @@ export function processReview(
     graceDeadline: newGraceDeadline,
     scheduleLocked: false,
     reviewType: 'standard',
+    easeAfter: newEase,
   };
 }

@@ -10,6 +10,8 @@ import {
   SLOT_TRANCHE,
   TRANCHE_NAMES,
   MAX_SLOT,
+  MIN_SLOT,
+  LEARNING_SLOT,
 } from '../services/srEngine.js';
 
 const router = Router();
@@ -108,6 +110,27 @@ function getFullCard(cardId: string) {
 // (no mode)     — legacy: all due cards (review + new)
 router.get('/due', (req, res) => {
   try {
+    // Auto-graduate slot-1 (learning) cards whose session has ended.
+    // Slot 1 is an in-session re-test; if the grace deadline has passed
+    // (user didn't come back within the session), promote to slot 4.
+    const staleLearnCards = queryAll(
+      `SELECT id FROM cards
+       WHERE sr_is_active = 1 AND sr_slot = ?
+         AND sr_grace_deadline IS NOT NULL
+         AND datetime(sr_grace_deadline) < datetime('now')`,
+      [LEARNING_SLOT]
+    );
+    if (staleLearnCards.length > 0) {
+      for (const lc of staleLearnCards) {
+        const nextDue = calculateNextDue(MIN_SLOT);
+        const grace = calculateGraceDeadline(nextDue, MIN_SLOT);
+        run(
+          `UPDATE cards SET sr_slot = ?, sr_next_due_at = ?, sr_grace_deadline = ?, updated_at = datetime('now') WHERE id = ?`,
+          [MIN_SLOT, nextDue, grace, lc.id]
+        );
+      }
+    }
+
     const { topic, set, tags, slotMin, slotMax, mode, limit, order, ids, dailyNewLimit, globalNewLimit } = req.query;
     const requestedNewLimit = safeInt(limit, 10, 1, 1000);
     const dailyCap = dailyNewLimit !== undefined ? safeInt(dailyNewLimit, 0, 0, 1000) : null;
@@ -480,7 +503,9 @@ router.post('/review', (req, res) => {
     const reviewResult = processReview(
       result,
       card.sr_slot,
-      card.sr_next_due_at
+      card.sr_next_due_at,
+      card.sr_ease_factor ?? 2.5,
+      response_time_ms,
     );
 
     // Always log the review
@@ -503,12 +528,13 @@ router.post('/review', (req, res) => {
         [result === 'correct' ? 1 : 0, cardId]
       );
     } else {
-      // Standard review — update slot + schedule
+      // Standard review — update slot + schedule + ease factor
       run(
         `UPDATE cards SET
           sr_slot = ?,
           sr_next_due_at = ?,
           sr_grace_deadline = ?,
+          sr_ease_factor = ?,
           sr_total_reviews = sr_total_reviews + 1,
           sr_total_correct = sr_total_correct + ?,
           sr_last_reviewed_at = datetime('now'),
@@ -518,6 +544,7 @@ router.post('/review', (req, res) => {
           reviewResult.newSlot,
           reviewResult.nextDueAt,
           reviewResult.graceDeadline,
+          reviewResult.easeAfter,
           result === 'correct' ? 1 : 0,
           cardId,
         ]
@@ -531,6 +558,7 @@ router.post('/review', (req, res) => {
       slotAfter: reviewResult.newSlot,
       scheduleLocked: reviewResult.scheduleLocked,
       reviewType: reviewResult.reviewType,
+      easeAfter: reviewResult.easeAfter,
     });
   } catch (err) {
     console.error('Error submitting review:', err);

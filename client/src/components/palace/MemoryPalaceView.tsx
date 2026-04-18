@@ -308,7 +308,7 @@ function LocusPanel({ locus, onClose, onUpdate }: {
     setEditing(false);
   };
 
-  const tierLabels = ['New', '4h', '1d', '2d', '1w', '2w', '1mo', '3mo', '6mo'];
+  const tierLabels = ['New', '10m', '1d', '3d', '1w', '2w', '1mo', '4mo', '8mo'];
 
   return (
     <motion.div
