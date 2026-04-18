@@ -55,8 +55,8 @@ export interface Locus {
 // ─── Constants ───────────────────────────────────
 
 export const LOCUS_COLORS = [
-  '#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f97316',
-  '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6',
+  '#d4a853', '#5b8a9a', '#c75a5a', '#c9943b', '#3d9a6e',
+  '#b8a44a', '#3a8a8a', '#4a8aaa', '#8a6a9a', '#c97a3b',
 ];
 
 // ─── Theme Definitions ──────────────────────────
@@ -85,7 +85,7 @@ interface ThemeDef {
 const S_WOOD: RoomStyle = {
   wallColor: '#2c2f48', wallStroke: '#3e4265',
   floorPattern: 'wood', floorBase: '#1b1d30', floorLine: '#16182a', floorAlt: '#1e2034',
-  accentColor: '#6366f1',
+  accentColor: '#d4a853',
 };
 const S_TILE: RoomStyle = {
   wallColor: '#283040', wallStroke: '#3a4860',

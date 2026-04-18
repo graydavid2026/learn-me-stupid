@@ -257,7 +257,7 @@ function ElaborationPanel({ card, onCardUpdated }: { card: CardFull; onCardUpdat
 
   return (
     <div className="border-t border-border mt-2 pt-2" onClick={e => e.stopPropagation()}>
-      <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1.5 text-center">Deepen Your Understanding</div>
+      <div className="text-[10px] uppercase tracking-wider text-text-tertiary mb-1.5 text-center">Deepen Your Understanding</div>
       <div className="grid grid-cols-2 gap-1.5">
         {ELABORATION_PROMPTS.map(prompt => {
           const Icon = prompt.icon;
@@ -483,6 +483,148 @@ function MediaBlockRenderer({ block, hasImage }: { block: MediaBlock; hasImage?:
     default:
       return null;
   }
+}
+
+// ─── Quick Add Card ─────────────────────────────────────────────────────────
+
+function QuickAddCard() {
+  const { topics, cardSets, selectedTopicId, fetchCardSets, fetchTopics } = useStore();
+  const createCard = useStore((s) => s.createCard);
+  const [expanded, setExpanded] = useState(false);
+  const [front, setFront] = useState('');
+  const [back, setBack] = useState('');
+  const [targetSetId, setTargetSetId] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+
+  // Load card sets when topic is selected
+  useEffect(() => {
+    if (selectedTopicId) {
+      fetchCardSets(selectedTopicId);
+    }
+  }, [selectedTopicId, fetchCardSets]);
+
+  // Auto-select first set
+  useEffect(() => {
+    if (cardSets.length > 0 && !targetSetId) {
+      setTargetSetId(cardSets[0].id);
+    }
+  }, [cardSets, targetSetId]);
+
+  const handleSave = async () => {
+    if (!front.trim() || !back.trim() || !targetSetId) return;
+    setSaving(true);
+    try {
+      const result = await createCard(targetSetId, {
+        front: { media_blocks: [{ block_type: 'text', text_content: front.trim() }] },
+        back: { media_blocks: [{ block_type: 'text', text_content: back.trim() }] },
+      });
+      if (result) {
+        setFront('');
+        setBack('');
+        setJustSaved(true);
+        fetchTopics();
+        setTimeout(() => setJustSaved(false), 2000);
+      }
+    } catch (err) {
+      console.error('Quick add failed:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!selectedTopicId) {
+    return (
+      <button
+        disabled
+        className="w-full card p-3 flex items-center gap-3 opacity-50 cursor-not-allowed"
+      >
+        <Plus className="w-4 h-4 text-text-tertiary" />
+        <span className="text-sm text-text-tertiary">Select a topic to quick-add cards</span>
+      </button>
+    );
+  }
+
+  if (!expanded) {
+    return (
+      <button
+        onClick={() => setExpanded(true)}
+        className="w-full card p-3 flex items-center gap-3 hover:border-accent/30 active:scale-[0.99] transition-all cursor-pointer"
+      >
+        <Plus className="w-4 h-4 text-accent" />
+        <span className="text-sm text-text-primary font-medium">Quick Add Card</span>
+        <span className="text-xs text-text-tertiary ml-auto">to {topics.find(t => t.id === selectedTopicId)?.name}</span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="card p-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Plus className="w-4 h-4 text-accent" />
+          <span className="text-sm font-medium text-text-primary">Quick Add Card</span>
+        </div>
+        <button
+          onClick={() => setExpanded(false)}
+          className="text-xs text-text-tertiary hover:text-text-secondary"
+        >
+          Close
+        </button>
+      </div>
+
+      {/* Set selector */}
+      {cardSets.length > 1 && (
+        <select
+          value={targetSetId}
+          onChange={(e) => setTargetSetId(e.target.value)}
+          className="w-full bg-surface-base border border-border rounded-lg px-3 py-2 text-sm text-text-primary mb-2 focus:border-accent/40 focus:outline-none"
+        >
+          {cardSets.map((s) => (
+            <option key={s.id} value={s.id}>{s.name}</option>
+          ))}
+        </select>
+      )}
+
+      <input
+        type="text"
+        value={front}
+        onChange={(e) => setFront(e.target.value)}
+        placeholder="Front (question / prompt)"
+        className="w-full bg-surface-base border border-border rounded-lg px-3 py-2.5 text-sm text-text-primary placeholder-text-tertiary mb-2 focus:border-accent/40 focus:outline-none"
+        autoFocus
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && front.trim() && back.trim()) handleSave();
+        }}
+      />
+      <input
+        type="text"
+        value={back}
+        onChange={(e) => setBack(e.target.value)}
+        placeholder="Back (answer)"
+        className="w-full bg-surface-base border border-border rounded-lg px-3 py-2.5 text-sm text-text-primary placeholder-text-tertiary mb-3 focus:border-accent/40 focus:outline-none"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && front.trim() && back.trim()) handleSave();
+        }}
+      />
+
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleSave}
+          disabled={saving || !front.trim() || !back.trim() || !targetSetId}
+          className="btn-primary text-sm px-4 py-2 flex items-center gap-2 disabled:opacity-40"
+        >
+          {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+          Add Card
+        </button>
+        {justSaved && (
+          <span className="text-xs text-success flex items-center gap-1">
+            <Check className="w-3 h-3" /> Saved
+          </span>
+        )}
+      </div>
+    </div>
+  );
 }
 
 type StudyMode = 'review' | 'new' | 'mixed' | 'pipeline' | 'focus';
@@ -885,15 +1027,73 @@ export function StudyView() {
 
   const currentCard = queue[currentIndex];
 
+  // Session complete data — hoisted to top level to satisfy rules of hooks
+  const [completeStreak, setCompleteStreak] = useState(0);
+  const [nextDueLabel, setNextDueLabel] = useState<string | null>(null);
+  useEffect(() => {
+    if (!sessionComplete) return;
+    (async () => {
+      try {
+        const params = selectedTopicId ? `?topic=${selectedTopicId}` : '';
+        const res = await fetch(`/api/study/stats${params}`);
+        if (res.ok) {
+          const data = await res.json();
+          setCompleteStreak(data.streak || 0);
+        }
+        const dueRes = await fetch('/api/study/forecast');
+        if (dueRes.ok) {
+          const fc = await dueRes.json();
+          const wf = fc.weekForecast;
+          if (wf && wf.length > 1 && wf[0].count === 0 && wf[1].count > 0) {
+            setNextDueLabel('Come back tomorrow');
+          } else if (wf && wf[0].count > 0) {
+            setNextDueLabel(`${wf[0].count} more cards due today`);
+          } else {
+            setNextDueLabel('Come back tomorrow');
+          }
+        }
+      } catch {}
+    })();
+  }, [sessionComplete, selectedTopicId]);
+
   // --- SESSION COMPLETE SCREEN ---
   if (sessionComplete) {
     const accuracy = stats.reviewed > 0 ? Math.round((stats.correct / stats.reviewed) * 100) : 0;
+
+    // Motivational copy based on accuracy
+    const motivationCopy = accuracy === 100
+      ? 'Perfect session! Your memory is razor-sharp.'
+      : accuracy >= 90
+        ? 'Outstanding recall. You\'re building deep retention.'
+        : accuracy >= 75
+          ? 'Solid session. The spaced repetition is working.'
+          : accuracy >= 50
+            ? 'Good effort. The cards you missed will come back sooner for extra practice.'
+            : 'Tough session, but showing up is what matters. Those tricky cards will repeat soon.';
+
     return (
       <div className="max-w-lg mx-auto text-center py-12">
         <div className="card p-8">
           <GraduationCap className="w-16 h-16 mx-auto mb-4 text-accent" />
           <h2 className="text-2xl font-heading font-bold text-text-primary mb-2">Session Complete!</h2>
-          <p className="text-text-secondary mb-6">Great work on your study session.</p>
+          <p className="text-text-secondary mb-4">{motivationCopy}</p>
+
+          {/* Streak display */}
+          {completeStreak > 0 && (
+            <div className="flex items-center justify-center gap-2 mb-4">
+              <Flame className="w-5 h-5" style={{ color: HEAT_COLORS[getStreakHeat(completeStreak)] }} />
+              <span className="text-lg font-bold font-mono" style={{ color: HEAT_COLORS[getStreakHeat(completeStreak)] }}>
+                {completeStreak} day{completeStreak !== 1 ? 's' : ''} streak
+              </span>
+            </div>
+          )}
+
+          {/* Next due countdown */}
+          {nextDueLabel && (
+            <div className="bg-surface-base rounded-lg px-4 py-2 mb-6 inline-block">
+              <span className="text-xs text-text-tertiary">{nextDueLabel}</span>
+            </div>
+          )}
 
           <div className="grid grid-cols-3 gap-4 mb-6">
             <div className="bg-surface-base rounded-lg p-3">
@@ -1120,7 +1320,7 @@ export function StudyView() {
                       const textClass = hasImg ? 'text-[13px] sm:text-sm leading-snug' : text.length > 200 ? 'text-sm sm:text-base leading-snug' : 'text-base sm:text-lg leading-relaxed';
                       return (
                         <div key={block.id} className="w-full">
-                          <div className={`${textClass} text-gray-100`}>
+                          <div className={`${textClass} text-text-primary`}>
                             <ClozeText text={text} revealed={false} />
                           </div>
                         </div>
@@ -1150,7 +1350,7 @@ export function StudyView() {
                           }
                         }}
                         placeholder="Type your answer..."
-                        className="flex-1 bg-surface-base border border-border rounded-lg px-3 py-2.5 text-sm text-gray-200 placeholder-gray-500 focus:border-accent focus:outline-none"
+                        className="flex-1 bg-surface-base border border-border rounded-lg px-3 py-2.5 text-sm text-text-primary placeholder-text-tertiary focus:border-accent focus:outline-none"
                         autoFocus
                       />
                       <button
@@ -1168,10 +1368,10 @@ export function StudyView() {
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      <div className={`text-center py-2 rounded-lg font-medium ${typingResult === 'correct' ? 'bg-green-600/20 text-green-400 border border-green-600/30' : 'bg-red-600/20 text-red-400 border border-red-600/30'}`}>
+                      <div className={`text-center py-2 rounded-lg font-medium ${typingResult === 'correct' ? 'bg-success/20 text-success border border-success/30' : 'bg-error/20 text-error border border-error/30'}`}>
                         {typingResult === 'correct' ? 'Correct!' : `Wrong — the answer was: ${getExpectedAnswer(currentCard)}`}
                       </div>
-                      <div className="text-xs text-gray-500 text-center">Your answer: {typingInput}</div>
+                      <div className="text-xs text-text-tertiary text-center">Your answer: {typingInput}</div>
                     </div>
                   )}
                 </div>
@@ -1205,7 +1405,7 @@ export function StudyView() {
                         const textClass = hasImg ? 'text-[13px] sm:text-sm leading-snug' : text.length > 200 ? 'text-sm sm:text-base leading-snug' : 'text-base sm:text-lg leading-relaxed';
                         return (
                           <div key={block.id} className="w-full">
-                            <div className={`${textClass} text-gray-100`}>
+                            <div className={`${textClass} text-text-primary`}>
                               <ClozeText text={text} revealed={true} />
                             </div>
                           </div>
@@ -1275,6 +1475,11 @@ export function StudyView() {
         topicId={selectedTopicId}
         onStartSelected={(ids) => startSession(ids)}
       />
+
+      <div className="border-t border-border/40 my-6" />
+
+      {/* Quick Add Card */}
+      <QuickAddCard />
 
       <div className="border-t border-border/40 my-6" />
 

@@ -2,10 +2,10 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { Check, X, Minus, AlertTriangle, ChevronDown, ChevronRight, Clock, Sparkles } from 'lucide-react';
 
 const SLOT_COLORS: Record<number, string> = {
-  0: '#6b7280', 1: '#ef4444', 2: '#f97316', 3: '#f59e0b',
-  4: '#eab308', 5: '#a3e635', 6: '#84cc16', 7: '#22c55e',
-  8: '#10b981', 9: '#14b8a6', 10: '#06b6d4', 11: '#3b82f6',
-  12: '#8b5cf6', 13: '#a855f7',
+  0: '#6b7280', 1: '#c75a5a', 2: '#c97a3b', 3: '#c9943b',
+  4: '#b8a44a', 5: '#8aab5a', 6: '#6aab6a', 7: '#3d9a6e',
+  8: '#3a8a7a', 9: '#3a8a8a', 10: '#4a8aaa', 11: '#5b8a9a',
+  12: '#7a7aaa', 13: '#8a6a9a',
 };
 
 const SLOT_LABELS: Record<number, string> = {

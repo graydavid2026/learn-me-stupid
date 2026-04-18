@@ -27,6 +27,7 @@ export interface Card {
   card_set_id: string;
   sort_order: number;
   tags: string; // JSON array string
+  card_type: 'standard' | 'cloze' | 'typing';
   created_at: string;
   updated_at: string;
   sr_tier: number;

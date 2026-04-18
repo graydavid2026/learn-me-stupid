@@ -22,7 +22,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-surface-base flex flex-col">
       {/* Top header */}
-      <header className="bg-surface/80 backdrop-blur-md border-b border-border/40 px-3 sm:px-5 h-12 sm:h-14 flex items-center justify-between shrink-0 safe-top">
+      <header className="bg-surface-base/90 backdrop-blur-md border-b border-border-subtle px-3 sm:px-5 h-12 sm:h-14 flex items-center justify-between shrink-0 safe-top">
         <div className="flex items-center gap-2 sm:gap-4 min-w-0">
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <BookOpen className="w-5 h-5 sm:w-5 sm:h-5 text-accent" />
@@ -61,7 +61,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </main>
 
       {/* Mobile bottom navigation bar */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-surface/90 backdrop-blur-md border-t border-border/40 safe-bottom z-50">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-surface-base/90 backdrop-blur-md border-t border-border-subtle safe-bottom z-50">
         <div className="flex items-center justify-around h-14">
           {navItems.map(({ to, label, icon: Icon }) => (
             <NavLink

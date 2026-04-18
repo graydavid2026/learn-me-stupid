@@ -27,7 +27,7 @@ function TopicNode({ data }: NodeProps) {
     <div className="bg-surface border-2 border-accent rounded-xl px-5 py-3 shadow-lg shadow-accent/10 min-w-[140px] text-center">
       <Handle type="source" position={Position.Bottom} className="!bg-accent !w-2 !h-2" />
       <div className="text-white font-heading font-bold text-sm">{data.label}</div>
-      {data.subtitle && <div className="text-gray-400 text-xs mt-0.5">{data.subtitle}</div>}
+      {data.subtitle && <div className="text-text-secondary text-xs mt-0.5">{data.subtitle}</div>}
     </div>
   );
 }
@@ -37,12 +37,12 @@ function SetNode({ data }: NodeProps) {
   return (
     <div
       className="bg-surface-elevated border border-border rounded-lg px-4 py-2.5 shadow-md min-w-[120px] text-center hover:border-accent/40 transition-colors"
-      style={{ borderLeftColor: data.color || '#6366f1', borderLeftWidth: 3 }}
+      style={{ borderLeftColor: data.color || '#d4a853', borderLeftWidth: 3 }}
     >
-      <Handle type="target" position={Position.Top} className="!bg-gray-500 !w-2 !h-2" />
-      <Handle type="source" position={Position.Bottom} className="!bg-gray-500 !w-2 !h-2" />
-      <div className="text-gray-200 font-medium text-xs">{data.label}</div>
-      <div className="text-gray-500 text-[10px] mt-0.5 font-mono">{data.cardCount} cards</div>
+      <Handle type="target" position={Position.Top} className="!bg-text-tertiary !w-2 !h-2" />
+      <Handle type="source" position={Position.Bottom} className="!bg-text-tertiary !w-2 !h-2" />
+      <div className="text-text-primary font-medium text-xs">{data.label}</div>
+      <div className="text-text-tertiary text-[10px] mt-0.5 font-mono">{data.cardCount} cards</div>
     </div>
   );
 }
@@ -54,8 +54,8 @@ function CardNode({ data }: NodeProps) {
       className="bg-surface-base border border-border rounded-md px-3 py-1.5 shadow-sm min-w-[100px] max-w-[180px] text-center"
       style={{ borderColor: TIER_COLORS[data.tier] + '60' }}
     >
-      <Handle type="target" position={Position.Top} className="!bg-gray-600 !w-1.5 !h-1.5" />
-      <div className="text-gray-300 text-[11px] truncate">{data.label}</div>
+      <Handle type="target" position={Position.Top} className="!bg-text-tertiary !w-1.5 !h-1.5" />
+      <div className="text-text-primary text-[11px] truncate">{data.label}</div>
       <div className="flex justify-center gap-0.5 mt-1">
         {Array.from({ length: 9 }, (_, i) => (
           <div
@@ -195,8 +195,8 @@ export function MindMapView() {
 
   if (!selectedTopicId) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-gray-400">
-        <Map className="w-16 h-16 mb-4 text-gray-600" />
+      <div className="flex flex-col items-center justify-center h-[60vh] text-text-secondary">
+        <Map className="w-16 h-16 mb-4 text-text-tertiary" />
         <p className="text-lg font-medium">Select a topic to view its mind map</p>
         <p className="text-sm mt-1">Use the dropdown above to choose a topic</p>
       </div>
@@ -231,7 +231,7 @@ export function MindMapView() {
         proOptions={{ hideAttribution: true }}
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#1e2030" />
-        <Controls className="!bg-surface !border-border !shadow-lg [&>button]:!bg-surface-elevated [&>button]:!border-border [&>button]:!text-gray-400 [&>button:hover]:!bg-surface" />
+        <Controls className="!bg-surface !border-border !shadow-lg [&>button]:!bg-surface-elevated [&>button]:!border-border [&>button]:!text-text-secondary [&>button:hover]:!bg-surface" />
       </ReactFlow>
     </div>
   );

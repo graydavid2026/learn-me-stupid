@@ -118,16 +118,16 @@ export function SettingsView() {
     <div className="max-w-2xl mx-auto">
       <div className="flex items-center gap-2 mb-6">
         <SettingsIcon className="w-6 h-6 text-accent" />
-        <h1 className="text-2xl font-heading font-bold text-white">Settings</h1>
+        <h1 className="text-2xl font-heading font-bold text-text-primary">Settings</h1>
       </div>
 
       {/* Read aloud */}
       <div className="card p-5 mb-4">
         <div className="flex items-center gap-3">
-          <Volume2 className={`w-5 h-5 shrink-0 ${ttsEnabled ? 'text-accent' : 'text-gray-500'}`} />
+          <Volume2 className={`w-5 h-5 shrink-0 ${ttsEnabled ? 'text-accent' : 'text-text-tertiary'}`} />
           <div className="flex-1 min-w-0">
-            <div className="text-base font-medium text-white">Read cards aloud</div>
-            <div className="text-xs text-gray-500">
+            <div className="text-base font-medium text-text-primary">Read cards aloud</div>
+            <div className="text-xs text-text-tertiary">
               Speaks the front when a card appears, then the back when flipped.
               Language is detected automatically per word.
             </div>
@@ -154,8 +154,8 @@ export function SettingsView() {
         <div className="flex items-center gap-3">
           <GraduationCap className="w-5 h-5 shrink-0 text-accent" />
           <div className="flex-1 min-w-0">
-            <div className="text-base font-medium text-white">New cards per day</div>
-            <div className="text-xs text-gray-500">
+            <div className="text-base font-medium text-text-primary">New cards per day</div>
+            <div className="text-xs text-text-tertiary">
               Cap how many brand-new cards you'll learn in a day across all topics. When the cap is hit, the
               study session asks you to review upcoming cards early instead.
             </div>
@@ -166,7 +166,7 @@ export function SettingsView() {
             max={20}
             value={dailyNewCardLimit}
             onChange={(e) => setDailyNewCardLimit(Number(e.target.value))}
-            className="w-20 bg-surface-base border border-border rounded-lg px-3 py-2 text-white text-center text-lg font-mono focus:outline-none focus:border-accent"
+            className="w-20 bg-surface-base border border-border rounded-lg px-3 py-2 text-text-primary text-center text-lg font-mono focus:outline-none focus:border-accent"
           />
         </div>
       </div>
@@ -174,10 +174,10 @@ export function SettingsView() {
       {/* Voice commands */}
       <div className="card p-5 mb-4">
         <div className="flex items-center gap-3 mb-2">
-          <Mic className={`w-5 h-5 shrink-0 ${voiceCmdEnabled ? 'text-accent' : 'text-gray-500'}`} />
+          <Mic className={`w-5 h-5 shrink-0 ${voiceCmdEnabled ? 'text-accent' : 'text-text-tertiary'}`} />
           <div className="flex-1 min-w-0">
-            <div className="text-base font-medium text-white">Voice commands</div>
-            <div className="text-xs text-gray-500">Control the study session hands-free with your voice.</div>
+            <div className="text-base font-medium text-text-primary">Voice commands</div>
+            <div className="text-xs text-text-tertiary">Control the study session hands-free with your voice.</div>
           </div>
           <button
             onClick={() => setVoiceCmdEnabled(!voiceCmdEnabled)}
@@ -195,29 +195,29 @@ export function SettingsView() {
           </button>
         </div>
         <div className="bg-surface-base rounded-lg p-3 mt-3 space-y-1.5">
-          <div className="text-xs text-gray-400 mb-1 font-semibold">Commands</div>
-          <div className="text-xs text-gray-300 flex justify-between"><span className="font-mono">"flip card"</span><span className="text-gray-500">show the back</span></div>
-          <div className="text-xs text-gray-300 flex justify-between"><span className="font-mono">"repeat"</span><span className="text-gray-500">read current side again</span></div>
-          <div className="text-xs text-gray-300 flex justify-between"><span className="font-mono">"next card"</span><span className="text-gray-500">skip to next</span></div>
-          <div className="text-xs text-gray-300 flex justify-between"><span className="font-mono">"correct"</span><span className="text-gray-500">grade correct</span></div>
-          <div className="text-xs text-gray-300 flex justify-between"><span className="font-mono">"wrong"</span><span className="text-gray-500">grade wrong</span></div>
-          <div className="text-xs text-gray-300 flex justify-between"><span className="font-mono">"end session"</span><span className="text-gray-500">exit the session</span></div>
+          <div className="text-xs text-text-secondary mb-1 font-semibold">Commands</div>
+          <div className="text-xs text-text-primary flex justify-between"><span className="font-mono">"flip card"</span><span className="text-text-tertiary">show the back</span></div>
+          <div className="text-xs text-text-primary flex justify-between"><span className="font-mono">"repeat"</span><span className="text-text-tertiary">read current side again</span></div>
+          <div className="text-xs text-text-primary flex justify-between"><span className="font-mono">"next card"</span><span className="text-text-tertiary">skip to next</span></div>
+          <div className="text-xs text-text-primary flex justify-between"><span className="font-mono">"correct"</span><span className="text-text-tertiary">grade correct</span></div>
+          <div className="text-xs text-text-primary flex justify-between"><span className="font-mono">"wrong"</span><span className="text-text-tertiary">grade wrong</span></div>
+          <div className="text-xs text-text-primary flex justify-between"><span className="font-mono">"end session"</span><span className="text-text-tertiary">exit the session</span></div>
         </div>
-        <div className="text-[11px] text-gray-500 mt-2">
+        <div className="text-[11px] text-text-tertiary mt-2">
           Works on Chrome / Edge (desktop & Android). Not supported on iOS Safari or Firefox. Requires microphone permission and HTTPS.
         </div>
         {!SR_SUPPORTED && (
-          <div className="mt-3 flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
-            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-            <div className="text-xs text-amber-300">
+          <div className="mt-3 flex items-start gap-2 bg-warning/10 border border-warning/30 rounded-lg p-3">
+            <AlertTriangle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
+            <div className="text-xs text-warning">
               Voice commands aren't supported in this browser. Open this page in Chrome or Edge on desktop or Android to enable.
             </div>
           </div>
         )}
         {!TTS_SUPPORTED && (
-          <div className="mt-3 flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
-            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-            <div className="text-xs text-amber-300">
+          <div className="mt-3 flex items-start gap-2 bg-warning/10 border border-warning/30 rounded-lg p-3">
+            <AlertTriangle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
+            <div className="text-xs text-warning">
               Read-aloud isn't supported in this browser.
             </div>
           </div>
@@ -229,8 +229,8 @@ export function SettingsView() {
         <div className="flex items-center gap-3 mb-3">
           <Shuffle className="w-5 h-5 shrink-0 text-accent" />
           <div className="flex-1 min-w-0">
-            <div className="text-base font-medium text-white">New card order</div>
-            <div className="text-xs text-gray-500">
+            <div className="text-base font-medium text-text-primary">New card order</div>
+            <div className="text-xs text-text-tertiary">
               Choose how "Learn New" picks cards for each topic. Random samples
               across your whole new-card pool; In Order uses the sequence you
               created cards in.
@@ -239,7 +239,7 @@ export function SettingsView() {
         </div>
         <div className="space-y-2">
           {topics.length === 0 && (
-            <div className="text-xs text-gray-500 italic">No topics yet.</div>
+            <div className="text-xs text-text-tertiary italic">No topics yet.</div>
           )}
           {topics.map((t) => {
             const current = newCardOrder[t.id] || 'entered';
@@ -249,7 +249,7 @@ export function SettingsView() {
                 className="flex items-center justify-between gap-3 bg-surface-base border border-border rounded-lg px-3 py-2"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm text-white truncate">{t.name}</div>
+                  <div className="text-sm text-text-primary truncate">{t.name}</div>
                 </div>
                 <div className="inline-flex rounded-lg border border-border overflow-hidden shrink-0">
                   <button
@@ -257,7 +257,7 @@ export function SettingsView() {
                     className={`px-3 py-1.5 text-xs font-medium transition-colors ${
                       current === 'entered'
                         ? 'bg-accent/20 text-accent'
-                        : 'bg-surface-elevated text-gray-400 hover:text-white'
+                        : 'bg-surface-elevated text-text-secondary hover:text-text-primary'
                     }`}
                   >
                     In Order
@@ -267,7 +267,7 @@ export function SettingsView() {
                     className={`px-3 py-1.5 text-xs font-medium transition-colors border-l border-border ${
                       current === 'random'
                         ? 'bg-accent/20 text-accent'
-                        : 'bg-surface-elevated text-gray-400 hover:text-white'
+                        : 'bg-surface-elevated text-text-secondary hover:text-text-primary'
                     }`}
                   >
                     Random
@@ -284,8 +284,8 @@ export function SettingsView() {
         <div className="flex items-center gap-3 mb-3">
           <Sparkles className="w-5 h-5 shrink-0 text-accent" />
           <div className="flex-1 min-w-0">
-            <div className="text-base font-medium text-white">Card generation prompts</div>
-            <div className="text-xs text-gray-500">
+            <div className="text-base font-medium text-text-primary">Card generation prompts</div>
+            <div className="text-xs text-text-tertiary">
               Copy a topic-specific prompt to paste into an LLM. It includes
               existing cards as style examples and asks for output in both
               copy-paste and JSON-for-Claude-Code formats.
@@ -294,7 +294,7 @@ export function SettingsView() {
         </div>
         <div className="space-y-2">
           {topics.length === 0 && (
-            <div className="text-xs text-gray-500 italic">No topics yet. Create a topic first.</div>
+            <div className="text-xs text-text-tertiary italic">No topics yet. Create a topic first.</div>
           )}
           {topics.map((t) => {
             const isLoading = loadingTopicId === t.id;
@@ -305,8 +305,8 @@ export function SettingsView() {
                 className="flex items-center justify-between gap-3 bg-surface-base border border-border rounded-lg px-3 py-2"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm text-white truncate">{t.name}</div>
-                  <div className="text-[11px] text-gray-500">
+                  <div className="text-sm text-text-primary truncate">{t.name}</div>
+                  <div className="text-[11px] text-text-tertiary">
                     {t.card_count} {t.card_count === 1 ? 'card' : 'cards'}
                   </div>
                 </div>
@@ -315,7 +315,7 @@ export function SettingsView() {
                   disabled={isLoading}
                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors shrink-0 ${
                     isCopied
-                      ? 'bg-green-500/20 text-green-300 border border-green-500/40'
+                      ? 'bg-success/20 text-success border border-success/40'
                       : 'bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25'
                   } disabled:opacity-50`}
                 >
@@ -344,8 +344,8 @@ export function SettingsView() {
         <div className="flex items-center gap-3 mb-3">
           <Database className="w-5 h-5 shrink-0 text-accent" />
           <div className="flex-1 min-w-0">
-            <div className="text-base font-medium text-white">Data & Backup</div>
-            <div className="text-xs text-gray-500">
+            <div className="text-base font-medium text-text-primary">Data & Backup</div>
+            <div className="text-xs text-text-tertiary">
               Download all your cards and study progress. Your data is always portable.
             </div>
           </div>
@@ -360,8 +360,8 @@ export function SettingsView() {
           >
             <Download className="w-4 h-4 text-accent shrink-0" />
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-white">Export as CSV</div>
-              <div className="text-[11px] text-gray-500">Cards with text and SR progress. Opens in Excel/Sheets.</div>
+              <div className="text-sm font-medium text-text-primary">Export as CSV</div>
+              <div className="text-[11px] text-text-tertiary">Cards with text and SR progress. Opens in Excel/Sheets.</div>
             </div>
           </button>
           <button
@@ -371,28 +371,28 @@ export function SettingsView() {
           >
             <Download className="w-4 h-4 text-accent shrink-0" />
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-white">Export as JSON (full backup)</div>
-              <div className="text-[11px] text-gray-500">Complete backup including all blocks, tags, and metadata.</div>
+              <div className="text-sm font-medium text-text-primary">Export as JSON (full backup)</div>
+              <div className="text-[11px] text-text-tertiary">Complete backup including all blocks, tags, and metadata.</div>
             </div>
           </button>
         </div>
 
         {/* Import buttons */}
         <div className="border-t border-border pt-3 space-y-2">
-          <div className="text-xs text-gray-500 mb-2">Import cards from a file</div>
+          <div className="text-xs text-text-tertiary mb-2">Import cards from a file</div>
           <input ref={csvFileRef} type="file" accept=".csv" className="hidden" onChange={handleCsvImport} />
           <input ref={jsonFileRef} type="file" accept=".json" className="hidden" onChange={handleJsonImport} />
           <div className="flex gap-2">
             <button
               onClick={() => csvFileRef.current?.click()}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-surface-elevated border border-border text-gray-300 hover:text-white hover:border-accent/50 transition-colors"
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-surface-elevated border border-border text-text-primary hover:text-text-primary hover:border-accent/50 transition-colors"
             >
               <Upload className="w-3.5 h-3.5" />
               Import CSV
             </button>
             <button
               onClick={() => jsonFileRef.current?.click()}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-surface-elevated border border-border text-gray-300 hover:text-white hover:border-accent/50 transition-colors"
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-surface-elevated border border-border text-text-primary hover:text-text-primary hover:border-accent/50 transition-colors"
             >
               <Upload className="w-3.5 h-3.5" />
               Import JSON
@@ -401,10 +401,10 @@ export function SettingsView() {
           {importStatus && (
             <div className={`text-xs mt-2 px-3 py-2 rounded-lg ${
               importStatus.startsWith('Error')
-                ? 'bg-red-500/10 border border-red-500/30 text-red-300'
+                ? 'bg-error/10 border border-error/30 text-error'
                 : importStatus === 'Importing...'
-                  ? 'bg-blue-500/10 border border-blue-500/30 text-blue-300'
-                  : 'bg-green-500/10 border border-green-500/30 text-green-300'
+                  ? 'bg-secondary/10 border border-secondary/30 text-secondary'
+                  : 'bg-success/10 border border-success/30 text-success'
             }`}>
               {importStatus}
             </div>

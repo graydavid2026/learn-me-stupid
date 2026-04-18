@@ -157,7 +157,7 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
       const ch = cropRect.h * size.scale;
       ctx.clearRect(cx, cy, cw, ch);
       ctx.drawImage(img, cropRect.x, cropRect.y, cropRect.w, cropRect.h, cx, cy, cw, ch);
-      ctx.strokeStyle = '#6366f1';
+      ctx.strokeStyle = '#d4a853';
       ctx.lineWidth = 2;
       ctx.setLineDash([6, 4]);
       ctx.strokeRect(cx, cy, cw, ch);

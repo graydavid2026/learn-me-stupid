@@ -151,7 +151,7 @@ export function HotspotImage({ imageSrc, spots, title }: HotspotImageProps) {
               className={`absolute w-9 h-9 -ml-[18px] -mt-[18px] rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all z-10 ${
                 activeSpot === idx
                   ? 'bg-accent border-accent text-white scale-125 ring-2 ring-accent/40'
-                  : 'bg-purple-600/80 border-purple-400 text-white hover:scale-110 active:scale-95 hover:bg-purple-500'
+                  : 'bg-secondary/80 border-secondary text-white hover:scale-110 active:scale-95 hover:bg-secondary-hover'
               }`}
               style={{ left: `${spot.x}%`, top: `${spot.y}%` }}
               onClick={(e) => handleSpotClick(idx, e)}

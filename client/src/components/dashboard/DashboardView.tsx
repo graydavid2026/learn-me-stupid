@@ -252,14 +252,14 @@ function TopicCard({ topic, onClick }: { topic: TopicForecast; onClick: () => vo
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           {topic.due_now > 0 ? (
-            <span className={`text-sm font-mono font-bold ${topic.overdue > 0 ? 'text-red-400' : 'text-amber-400'}`}>
+            <span className={`text-sm font-mono font-bold ${topic.overdue > 0 ? 'text-error' : 'text-warning'}`}>
               {topic.due_now} due
             </span>
           ) : (
-            <span className="text-sm text-green-400 font-medium">All caught up</span>
+            <span className="text-sm text-success font-medium">All caught up</span>
           )}
         </div>
-        <span className="text-[11px] text-gray-500">{topic.total_cards} cards</span>
+        <span className="text-[11px] text-text-tertiary">{topic.total_cards} cards</span>
       </div>
 
       {/* Tranche breakdown mini-bar */}
@@ -284,11 +284,11 @@ function TopicCard({ topic, onClick }: { topic: TopicForecast; onClick: () => vo
           className="h-1.5 rounded-full transition-all"
           style={{
             width: `${masteryPct}%`,
-            backgroundColor: masteryPct >= 80 ? '#22c55e' : masteryPct >= 40 ? '#f59e0b' : '#ef4444',
+            backgroundColor: masteryPct >= 80 ? '#3d9a6e' : masteryPct >= 40 ? '#c9943b' : '#c75a5a',
           }}
         />
       </div>
-      <div className="flex items-center justify-between text-[10px] text-gray-500">
+      <div className="flex items-center justify-between text-[10px] text-text-tertiary">
         <span>{masteryPct}% mastered</span>
         {topic.next_due && <span>Next: {fmt.relativeTime(topic.next_due)}</span>}
       </div>
@@ -305,7 +305,7 @@ function WeekForecast({ data }: { data: WeekDay[] }) {
     <div className="card p-4 sm:p-5">
       <div className="flex items-center gap-2 mb-4">
         <CalendarClock className="w-4 h-4 text-accent" />
-        <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">This Week</h3>
+        <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">This Week</h3>
       </div>
       <div className="flex items-end gap-1.5 sm:gap-2 h-[100px]">
         {data.map((d, i) => {
@@ -313,16 +313,16 @@ function WeekForecast({ data }: { data: WeekDay[] }) {
           const isToday = i === 0;
           return (
             <div key={d.day} className="flex-1 flex flex-col items-center gap-1">
-              <span className="text-[10px] font-mono text-gray-400">{d.count || ''}</span>
+              <span className="text-[10px] font-mono text-text-secondary">{d.count || ''}</span>
               <div
                 className="w-full rounded-t transition-all"
                 style={{
                   height: `${height}%`,
-                  backgroundColor: isToday ? '#6366f1' : d.count > 0 ? '#f59e0b' : '#1a1d27',
+                  backgroundColor: isToday ? '#d4a853' : d.count > 0 ? '#5b8a9a' : '#1a1d27',
                   minHeight: d.count > 0 ? 8 : 2,
                 }}
               />
-              <span className={`text-[10px] ${isToday ? 'text-accent font-bold' : 'text-gray-500'}`}>
+              <span className={`text-[10px] ${isToday ? 'text-accent font-bold' : 'text-text-tertiary'}`}>
                 {d.label}
               </span>
             </div>
@@ -361,7 +361,7 @@ function CalendarHeatmap({ history }: { history: HistoryEntry[] }) {
     <div className="card p-4 sm:p-5">
       <div className="flex items-center gap-2 mb-4">
         <Calendar className="w-4 h-4 text-accent" />
-        <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Activity (12 weeks)</h3>
+        <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Activity (12 weeks)</h3>
       </div>
       <div className="flex gap-1 overflow-x-auto pb-1">
         {weeks.map((week, wi) => (
@@ -370,7 +370,7 @@ function CalendarHeatmap({ history }: { history: HistoryEntry[] }) {
               const intensity = day.count / maxCount;
               const bg = day.count === 0
                 ? '#1a1d27'
-                : `rgba(99, 102, 241, ${0.2 + intensity * 0.8})`;
+                : `rgba(212, 168, 83, ${0.2 + intensity * 0.8})`;
               return (
                 <div
                   key={di}
@@ -383,13 +383,13 @@ function CalendarHeatmap({ history }: { history: HistoryEntry[] }) {
           </div>
         ))}
       </div>
-      <div className="flex items-center gap-2 mt-3 text-[10px] text-gray-500">
+      <div className="flex items-center gap-2 mt-3 text-[10px] text-text-tertiary">
         <span>Less</span>
         {[0, 0.25, 0.5, 0.75, 1].map((i) => (
           <div
             key={i}
             className="w-3 h-3 rounded-sm"
-            style={{ backgroundColor: i === 0 ? '#1a1d27' : `rgba(99, 102, 241, ${0.2 + i * 0.8})` }}
+            style={{ backgroundColor: i === 0 ? '#1a1d27' : `rgba(212, 168, 83, ${0.2 + i * 0.8})` }}
           />
         ))}
         <span>More</span>
@@ -404,7 +404,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-surface border border-border rounded-lg px-3 py-2 shadow-lg text-xs">
-      <p className="text-gray-400 mb-1">{label}</p>
+      <p className="text-text-secondary mb-1">{label}</p>
       {payload.map((p: any) => (
         <p key={p.name} style={{ color: p.color }}>
           {p.name}: {p.value}
@@ -473,7 +473,7 @@ export function DashboardView() {
   }, [selectedTopicId]);
 
   if (loading || !stats || !forecast) {
-    return <div className="text-gray-400 text-center py-20">Loading dashboard...</div>;
+    return <div className="text-text-secondary text-center py-20">Loading dashboard...</div>;
   }
 
   const accuracy = stats.reviewsToday > 0
@@ -509,10 +509,10 @@ export function DashboardView() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4 sm:mb-6">
         <div>
-          <h2 className="text-xl sm:text-2xl font-heading font-bold text-white">
+          <h2 className="text-xl sm:text-2xl font-heading font-bold text-text-primary">
             {selectedTopic ? selectedTopic.name : 'Command Center'}
           </h2>
-          <p className="text-xs sm:text-sm text-gray-400 mt-0.5">
+          <p className="text-xs sm:text-sm text-text-secondary mt-0.5">
             {selectedTopic ? 'Topic SR overview' : 'Your learning intelligence across all topics'}
           </p>
         </div>
@@ -533,16 +533,16 @@ export function DashboardView() {
       {totalOverdue > 0 && (
         <button
           onClick={goStudy}
-          className="w-full card border-red-500/30 bg-red-500/[0.05] p-3 sm:p-4 mb-4 sm:mb-6 flex items-center gap-3 hover:bg-red-500/[0.08] active:scale-[0.99] transition-all"
+          className="w-full card border-error/30 bg-error/[0.05] p-3 sm:p-4 mb-4 sm:mb-6 flex items-center gap-3 hover:bg-error/[0.08] active:scale-[0.99] transition-all"
         >
-          <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
+          <AlertTriangle className="w-5 h-5 text-error shrink-0" />
           <div className="flex-1 text-left">
-            <p className="text-sm font-medium text-red-400">
+            <p className="text-sm font-medium text-error">
               {totalOverdue} card{totalOverdue !== 1 ? 's' : ''} overdue — past grace period
             </p>
-            <p className="text-xs text-gray-500 mt-0.5">Review now to prevent slot regression</p>
+            <p className="text-xs text-text-tertiary mt-0.5">Review now to prevent slot regression</p>
           </div>
-          <ChevronRight className="w-4 h-4 text-red-400 shrink-0" />
+          <ChevronRight className="w-4 h-4 text-error shrink-0" />
         </button>
       )}
 
@@ -550,10 +550,10 @@ export function DashboardView() {
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3 mb-4 sm:mb-6">
         <DailyGoalCard reviewed={stats.reviewsToday} goal={dailyGoal} onGoalChange={handleGoalChange} />
         <StreakDisplay streak={stats.streak} bestStreak={bestStreak} />
-        <StatCard icon={Clock} label="Due Now" value={stats.dueToday} color={stats.dueToday > 0 ? '#f59e0b' : '#22c55e'} tooltip="due-today" onClick={stats.dueToday > 0 ? goStudy : undefined} urgent={stats.dueToday > 10} />
+        <StatCard icon={Clock} label="Due Now" value={stats.dueToday} color={stats.dueToday > 0 ? '#c9943b' : '#3d9a6e'} tooltip="due-today" onClick={stats.dueToday > 0 ? goStudy : undefined} urgent={stats.dueToday > 10} />
         <StatCard icon={BarChart3} label="Accuracy" value={fmt.pct(accuracy)} color={HEAT_COLORS[getAccuracyHeat(accuracy)]} tooltip="accuracy" />
-        <StatCard icon={Target} label="Mastered" value={stats.mastered} color="#22c55e" tooltip="mastered" />
-        <StatCard icon={BookOpen} label="Total Cards" value={stats.total} color="#e5e7eb" />
+        <StatCard icon={Target} label="Mastered" value={stats.mastered} color="#3d9a6e" tooltip="mastered" />
+        <StatCard icon={BookOpen} label="Total Cards" value={stats.total} color="#e4e4e7" />
       </div>
 
       {/* Week Forecast + Quick Stats */}
@@ -564,7 +564,7 @@ export function DashboardView() {
         <div className="card p-4 sm:p-5">
           <div className="flex items-center gap-2 mb-4">
             <Zap className="w-4 h-4 text-accent" />
-            <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Tier Distribution</h3>
+            <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Tier Distribution</h3>
           </div>
           <ResponsiveContainer width="100%" height={100}>
             <BarChart data={slotData} barSize={20}>
@@ -583,7 +583,7 @@ export function DashboardView() {
       {/* Topics Grid — the core Palantir-style view */}
       {!selectedTopicId && forecast.topics.length > 0 && (
         <div className="mb-4 sm:mb-6">
-          <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Topics</h3>
+          <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-3">Topics</h3>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
             {forecast.topics.map((topic) => (
               <TopicCard
@@ -617,26 +617,26 @@ export function DashboardView() {
           {topicSR.summary && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
               <div className="card p-3">
-                <p className="text-xs text-gray-500 uppercase">Total</p>
-                <p className="text-lg font-bold font-mono text-white">{topicSR.summary.total || 0}</p>
+                <p className="text-xs text-text-tertiary uppercase">Total</p>
+                <p className="text-lg font-bold font-mono text-text-primary">{topicSR.summary.total || 0}</p>
               </div>
               <div className="card p-3">
-                <p className="text-xs text-gray-500 uppercase">Due</p>
-                <p className="text-lg font-bold font-mono text-amber-400">{topicSR.summary.due || 0}</p>
+                <p className="text-xs text-text-tertiary uppercase">Due</p>
+                <p className="text-lg font-bold font-mono text-warning">{topicSR.summary.due || 0}</p>
               </div>
               <div className="card p-3">
-                <p className="text-xs text-gray-500 uppercase">Overdue</p>
-                <p className="text-lg font-bold font-mono text-red-400">{topicSR.summary.overdue || 0}</p>
+                <p className="text-xs text-text-tertiary uppercase">Overdue</p>
+                <p className="text-lg font-bold font-mono text-error">{topicSR.summary.overdue || 0}</p>
               </div>
               <div className="card p-3">
-                <p className="text-xs text-gray-500 uppercase">Mastered</p>
-                <p className="text-lg font-bold font-mono text-purple-400">{topicSR.summary.mastered || 0}</p>
+                <p className="text-xs text-text-tertiary uppercase">Mastered</p>
+                <p className="text-lg font-bold font-mono text-secondary">{topicSR.summary.mastered || 0}</p>
               </div>
             </div>
           )}
 
           {/* Sets breakdown with tranche drill-down */}
-          <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Card Sets</h3>
+          <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-3">Card Sets</h3>
           <div className="space-y-2 mb-6">
             {topicSR.sets?.map((set: any) => {
               const masteryPct = set.total > 0 ? Math.round((set.mastered / set.total) * 100) : 0;
@@ -650,14 +650,14 @@ export function DashboardView() {
                   className="card p-3 w-full text-left hover:border-accent/40 active:scale-[0.99] transition-all cursor-pointer"
                 >
                   <div className="flex items-center justify-between mb-1">
-                    <p className="text-sm font-medium text-white truncate">{set.name}</p>
+                    <p className="text-sm font-medium text-text-primary truncate">{set.name}</p>
                     <div className="flex items-center gap-2">
                       {set.due > 0 && (
-                        <span className={`text-xs font-mono font-bold ${set.overdue > 0 ? 'text-red-400' : 'text-amber-400'}`}>
+                        <span className={`text-xs font-mono font-bold ${set.overdue > 0 ? 'text-error' : 'text-warning'}`}>
                           {set.due} due
                         </span>
                       )}
-                      <ChevronRight className="w-3.5 h-3.5 text-gray-600" />
+                      <ChevronRight className="w-3.5 h-3.5 text-text-tertiary" />
                     </div>
                   </div>
                   {/* Tranche breakdown for this set */}
@@ -676,15 +676,15 @@ export function DashboardView() {
                     </div>
                   )}
                   <div className="flex items-center gap-3 text-[11px]">
-                    <span className="text-gray-500">{set.total} cards</span>
-                    <span className="text-gray-500">{masteryPct}% mastered</span>
+                    <span className="text-text-tertiary">{set.total} cards</span>
+                    <span className="text-text-tertiary">{masteryPct}% mastered</span>
                     <div className="flex-1" />
                     <div className="w-16 bg-surface-base rounded-full h-1.5">
                       <div
                         className="h-1.5 rounded-full"
                         style={{
                           width: `${masteryPct}%`,
-                          backgroundColor: masteryPct >= 80 ? '#22c55e' : masteryPct >= 40 ? '#f59e0b' : '#ef4444',
+                          backgroundColor: masteryPct >= 80 ? '#3d9a6e' : masteryPct >= 40 ? '#c9943b' : '#c75a5a',
                         }}
                       />
                     </div>
@@ -697,7 +697,7 @@ export function DashboardView() {
           {/* Accuracy trend for this topic */}
           {topicSR.accuracy?.length > 0 && (
             <div className="card p-4 sm:p-5 mb-6">
-              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Accuracy Trend (30d)</h3>
+              <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-4">Accuracy Trend (30d)</h3>
               <ResponsiveContainer width="100%" height={150}>
                 <LineChart data={topicSR.accuracy.map((a: any) => ({
                   day: a.day.slice(5),
@@ -706,7 +706,7 @@ export function DashboardView() {
                   <XAxis dataKey="day" tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
                   <YAxis domain={[0, 100]} tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={false} tickLine={false} />
                   <Tooltip content={<CustomTooltip />} />
-                  <Line type="monotone" dataKey="accuracy" stroke="#6366f1" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="accuracy" stroke="#d4a853" strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -715,7 +715,7 @@ export function DashboardView() {
           {/* SR Pipeline — cards in the system */}
           {topicSR.cards?.length > 0 && (
             <div className="card p-4 sm:p-5">
-              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">
+              <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-3">
                 SR Pipeline ({topicSR.cards.length} cards)
               </h3>
               <div className="space-y-1 max-h-[300px] overflow-y-auto">
@@ -730,11 +730,11 @@ export function DashboardView() {
                         className="w-2 h-2 rounded-full shrink-0"
                         style={{ backgroundColor: SLOT_COLORS[card.sr_slot] }}
                       />
-                      <span className="text-xs text-gray-300 truncate flex-1">
+                      <span className="text-xs text-text-primary truncate flex-1">
                         {card.preview?.slice(0, 50) || `Card (${card.set_name})`}
                       </span>
-                      <span className="text-[10px] text-gray-500 font-mono shrink-0">{SLOT_LABELS[card.sr_slot]}</span>
-                      <span className={`text-[10px] font-mono shrink-0 ${isDue ? 'text-amber-400' : 'text-gray-600'}`}>
+                      <span className="text-[10px] text-text-tertiary font-mono shrink-0">{SLOT_LABELS[card.sr_slot]}</span>
+                      <span className={`text-[10px] font-mono shrink-0 ${isDue ? 'text-warning' : 'text-text-tertiary'}`}>
                         {dueLabel}
                       </span>
                     </div>
