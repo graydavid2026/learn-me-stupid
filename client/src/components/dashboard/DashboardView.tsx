@@ -11,6 +11,8 @@ import {
 import { useStore } from '../../stores/useStore';
 import { InfoTooltip } from '../ui/InfoTooltip';
 import { SLOT_COLORS, HEAT_COLORS, getAccuracyHeat, getStreakHeat, fmt } from '../../utils/formatters';
+import { ForecastChart } from './ForecastChart';
+import { DurationChart } from './DurationChart';
 
 // ─── Daily Goal helpers ─────────────────────────────────────────────────────
 
@@ -953,6 +955,12 @@ export function DashboardView() {
           )}
         </div>
       )}
+
+      {/* Forecast + Duration Charts */}
+      <div className="grid sm:grid-cols-2 gap-3 sm:gap-4 mb-4 sm:mb-6">
+        <ForecastChart />
+        <DurationChart />
+      </div>
 
       {/* Advanced Analytics */}
       {(retention.length > 0 || velocity.length > 0 || efficiency) && (

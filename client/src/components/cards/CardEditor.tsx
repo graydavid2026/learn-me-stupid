@@ -709,7 +709,7 @@ function SideEditor({ label, blocks, onBlocksChange, cardSideId, textareaRefs }:
   );
 }
 
-type CardType = 'standard' | 'cloze' | 'typing';
+type CardType = 'standard' | 'cloze' | 'typing' | 'reversible';
 
 /** Count existing cloze groups in a text to auto-increment */
 function getNextClozeNumber(text: string): number {
@@ -961,7 +961,7 @@ export function CardEditor() {
           <div>
             <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-2">Card Type</h3>
             <div className="flex gap-1 bg-surface-base rounded-lg p-1 border border-border">
-              {(['standard', 'cloze', 'typing'] as CardType[]).map((t) => (
+              {(['standard', 'cloze', 'typing', 'reversible'] as CardType[]).map((t) => (
                 <button
                   key={t}
                   onClick={() => setCardType(t)}

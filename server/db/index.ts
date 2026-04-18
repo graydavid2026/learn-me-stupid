@@ -3,6 +3,7 @@ import fs from 'fs';
 import { writeFile } from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import logger from '../logger.js';
 
 export interface CardRow {
   id: string;
@@ -38,9 +39,59 @@ export interface MediaBlockRow {
   sort_order: number;
   text_content: string | null;
   file_path: string | null;
-  original_name: string | null;
+  file_name: string | null;
+  file_size: number | null;
   mime_type: string | null;
-  annotation_data: string | null;
+  youtube_url: string | null;
+  youtube_embed_id: string | null;
+}
+
+export interface TopicRow {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string;
+  icon: string;
+  parent_topic_id: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CardSetRow {
+  id: string;
+  topic_id: string;
+  name: string;
+  description: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Row shape returned by PRAGMA table_info() */
+export interface PragmaColumnInfo {
+  cid: number;
+  name: string;
+  type: string;
+  notnull: number;
+  dflt_value: string | null;
+  pk: number;
+}
+
+/** Generic row with a single aggregate 'next' field */
+export interface MaxOrderRow {
+  next: number;
+}
+
+/** Generic row with a count field */
+export interface CountRow {
+  count: number;
+  n?: number;
+}
+
+/** Row with a date string from review_log */
+export interface DayRow {
+  day: string;
 }
 
 export interface ReviewLogRow {
@@ -112,10 +163,10 @@ function persistAsync(): void {
     const data = db.export();
     const buffer = Buffer.from(data);
     writeFile(DB_PATH, buffer).catch((err) => {
-      console.error('Failed to persist database:', err);
+      logger.error({ err }, 'Failed to persist database');
     });
   } catch (err) {
-    console.error('Failed to export database for save:', err);
+    logger.error({ err }, 'Failed to export database for save');
   }
 }
 
@@ -132,7 +183,7 @@ export function flushDb(): void {
     const buffer = Buffer.from(data);
     fs.writeFileSync(DB_PATH, buffer);
   } catch (err) {
-    console.error('Failed to flush database on shutdown:', err);
+    logger.error({ err }, 'Failed to flush database on shutdown');
   }
 }
 
@@ -144,7 +195,8 @@ process.on('SIGTERM', () => {
 });
 
 // Helper: run a query and return rows as objects
-export function queryAll<T = any>(sql: string, params: any[] = []): T[] {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function queryAll<T = any>(sql: string, params: unknown[] = []): T[] {
   const d = getDb();
   const stmt = d.prepare(sql);
   if (params.length) stmt.bind(params);
@@ -158,13 +210,14 @@ export function queryAll<T = any>(sql: string, params: any[] = []): T[] {
 }
 
 // Helper: run a query and return first row as object or null
-export function queryOne<T = any>(sql: string, params: any[] = []): T | null {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function queryOne<T = any>(sql: string, params: unknown[] = []): T | null {
   const rows = queryAll<T>(sql, params);
   return rows.length > 0 ? rows[0] : null;
 }
 
 // Helper: run a mutation (INSERT/UPDATE/DELETE)
-export function run(sql: string, params: any[] = []): void {
+export function run(sql: string, params: unknown[] = []): void {
   const d = getDb();
   d.run(sql, params);
   markDirty();

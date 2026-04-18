@@ -1,10 +1,16 @@
 import { useEffect, useState, useRef } from 'react';
-import { Volume2, Mic, Settings as SettingsIcon, AlertTriangle, Sparkles, Copy, Check, Shuffle, GraduationCap, Download, Upload, Database, BookOpen, ChevronDown } from 'lucide-react';
+import { Volume2, Mic, Settings as SettingsIcon, AlertTriangle, Sparkles, Copy, Check, Shuffle, GraduationCap, Download, Upload, Database, BookOpen, ChevronDown, FileArchive, HardDrive } from 'lucide-react';
 import { useStore } from '../../stores/useStore';
+import { PushNotificationToggle } from './PushNotificationToggle';
+
+interface WindowWithSpeechRecognition {
+  SpeechRecognition?: unknown;
+  webkitSpeechRecognition?: unknown;
+}
 
 const SR_SUPPORTED =
   typeof window !== 'undefined' &&
-  !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+  !!((window as WindowWithSpeechRecognition).SpeechRecognition || (window as WindowWithSpeechRecognition).webkitSpeechRecognition);
 const TTS_SUPPORTED = typeof window !== 'undefined' && !!window.speechSynthesis;
 
 export function SettingsView() {
@@ -24,8 +30,12 @@ export function SettingsView() {
   const [exportingCsv, setExportingCsv] = useState(false);
   const [exportingJson, setExportingJson] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
+  const [exportingAnki, setExportingAnki] = useState(false);
+  const [ankiImportStatus, setAnkiImportStatus] = useState<string | null>(null);
+  const [backupStatus, setBackupStatus] = useState<string | null>(null);
   const csvFileRef = useRef<HTMLInputElement>(null);
   const jsonFileRef = useRef<HTMLInputElement>(null);
+  const ankiFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { fetchTopics(); }, [fetchTopics]);
 
@@ -97,6 +107,40 @@ export function SettingsView() {
     if (jsonFileRef.current) jsonFileRef.current.value = '';
   };
 
+  const handleAnkiImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAnkiImportStatus('Importing...');
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/import/anki', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Import failed');
+      const msg = `Imported ${data.cardsImported} card${data.cardsImported !== 1 ? 's' : ''} from ${data.decksImported} deck${data.decksImported !== 1 ? 's' : ''}`;
+      setAnkiImportStatus(data.errors?.length ? `${msg} (${data.errors.length} warnings)` : msg);
+      fetchTopics();
+    } catch (err: any) {
+      setAnkiImportStatus(`Error: ${err.message}`);
+    }
+    if (ankiFileRef.current) ankiFileRef.current.value = '';
+  };
+
+  const handleBackupNow = async () => {
+    setBackupStatus('Creating backup...');
+    try {
+      const res = await fetch('/api/backup/now', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Backup failed');
+      setBackupStatus(`Backup created successfully (${data.prunedCount} old backup${data.prunedCount !== 1 ? 's' : ''} pruned)`);
+    } catch (err: any) {
+      setBackupStatus(`Error: ${err.message}`);
+    }
+  };
+
   const copyPromptForTopic = async (topicId: string) => {
     setLoadingTopicId(topicId);
     try {
@@ -120,6 +164,9 @@ export function SettingsView() {
         <SettingsIcon className="w-6 h-6 text-accent" />
         <h1 className="text-2xl font-heading font-bold text-text-primary">Settings</h1>
       </div>
+
+      {/* Push Notifications */}
+      <PushNotificationToggle />
 
       {/* Read aloud */}
       <div className="card p-5 mb-4">
@@ -410,6 +457,90 @@ export function SettingsView() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Anki Import/Export */}
+      <div className="card p-5 mb-4">
+        <div className="flex items-center gap-3 mb-3">
+          <FileArchive className="w-5 h-5 shrink-0 text-accent" />
+          <div className="flex-1 min-w-0">
+            <div className="text-base font-medium text-text-primary">Anki Import / Export</div>
+            <div className="text-xs text-text-tertiary">
+              Import cards from Anki .apkg files or export your cards in Anki format.
+              Deck names become topics. HTML formatting is stripped on import.
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-2 mb-4">
+          <button
+            onClick={() => downloadFile('/api/export/anki', setExportingAnki)}
+            disabled={exportingAnki}
+            className="w-full flex items-center gap-3 bg-surface-base border border-border rounded-lg px-4 py-3 text-left hover:border-accent/50 transition-colors disabled:opacity-50"
+          >
+            <Download className="w-4 h-4 text-accent shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-text-primary">Export to Anki (.apkg)</div>
+              <div className="text-[11px] text-text-tertiary">Download all cards as an Anki-compatible package file.</div>
+            </div>
+          </button>
+        </div>
+
+        <div className="border-t border-border pt-3 space-y-2">
+          <div className="text-xs text-text-tertiary mb-2">Import from an Anki .apkg file</div>
+          <input ref={ankiFileRef} type="file" accept=".apkg" className="hidden" onChange={handleAnkiImport} />
+          <button
+            onClick={() => ankiFileRef.current?.click()}
+            className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-surface-elevated border border-border text-text-primary hover:text-text-primary hover:border-accent/50 transition-colors"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            Import Anki .apkg
+          </button>
+          {ankiImportStatus && (
+            <div className={`text-xs mt-2 px-3 py-2 rounded-lg ${
+              ankiImportStatus.startsWith('Error')
+                ? 'bg-error/10 border border-error/30 text-error'
+                : ankiImportStatus === 'Importing...'
+                  ? 'bg-secondary/10 border border-secondary/30 text-secondary'
+                  : 'bg-success/10 border border-success/30 text-success'
+            }`}>
+              {ankiImportStatus}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Server Backup */}
+      <div className="card p-5 mb-4">
+        <div className="flex items-center gap-3 mb-3">
+          <HardDrive className="w-5 h-5 shrink-0 text-accent" />
+          <div className="flex-1 min-w-0">
+            <div className="text-base font-medium text-text-primary">Server Backup</div>
+            <div className="text-xs text-text-tertiary">
+              The server automatically backs up the database daily, keeping the last 7 backups.
+              You can also trigger a backup manually.
+            </div>
+          </div>
+        </div>
+        <button
+          onClick={handleBackupNow}
+          disabled={backupStatus === 'Creating backup...'}
+          className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-surface-elevated border border-border text-text-primary hover:text-text-primary hover:border-accent/50 transition-colors disabled:opacity-50"
+        >
+          <Database className="w-3.5 h-3.5" />
+          Create Backup Now
+        </button>
+        {backupStatus && (
+          <div className={`text-xs mt-2 px-3 py-2 rounded-lg ${
+            backupStatus.startsWith('Error')
+              ? 'bg-error/10 border border-error/30 text-error'
+              : backupStatus === 'Creating backup...'
+                ? 'bg-secondary/10 border border-secondary/30 text-secondary'
+                : 'bg-success/10 border border-success/30 text-success'
+          }`}>
+            {backupStatus}
+          </div>
+        )}
       </div>
 
       {/* How Spaced Repetition Works */}

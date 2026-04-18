@@ -1,8 +1,9 @@
 import { useStore, CardFull } from '../../stores/useStore';
 import { useEffect, useState } from 'react';
-import { Plus, FolderOpen, Trash2, Check, X, Pencil, ChevronRight, FileText, Layers, Play } from 'lucide-react';
+import { Plus, FolderOpen, Trash2, Check, X, Pencil, ChevronRight, FileText, Layers, Play, Sparkles, ChevronDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { CardEditor } from './CardEditor';
+import { AiCardGenerator } from './AiCardGenerator';
 import { DeleteConfirmModal } from '../ui/DeleteConfirmModal';
 import { SLOT_COLORS } from '../../utils/formatters';
 
@@ -51,6 +52,7 @@ export function CardsView() {
   const [editName, setEditName] = useState('');
   const [expandedSetId, setExpandedSetId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'card' | 'set'; id: string; name: string } | null>(null);
+  const [showAiGenerator, setShowAiGenerator] = useState(false);
 
   const selectedTopic = topics.find((t) => t.id === selectedTopicId);
 
@@ -289,6 +291,23 @@ export function CardsView() {
           ))}
         </div>
       )}
+
+      {/* AI Card Generator */}
+      <div className="mt-6">
+        <button
+          onClick={() => setShowAiGenerator(!showAiGenerator)}
+          className="w-full flex items-center gap-3 card p-4 hover:border-accent/30 transition-colors"
+        >
+          <Sparkles className="w-5 h-5 text-accent" />
+          <span className="flex-1 text-left font-medium text-text-primary">AI Card Generator & PDF Import</span>
+          <ChevronDown className={`w-4 h-4 text-text-tertiary transition-transform ${showAiGenerator ? 'rotate-180' : ''}`} />
+        </button>
+        {showAiGenerator && (
+          <div className="mt-2">
+            <AiCardGenerator />
+          </div>
+        )}
+      </div>
 
       {/* Card Editor Modal */}
       {showCardEditor && <CardEditor />}

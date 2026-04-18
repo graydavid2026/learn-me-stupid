@@ -1,5 +1,11 @@
-import { initDb, exec, queryAll, queryOne, run } from './index.js';
+import { initDb, exec, queryAll, queryOne, run, PragmaColumnInfo, CountRow } from './index.js';
+import logger from '../logger.js';
 // initDb is used when running as standalone script
+
+interface MediaBlockText {
+  id: string;
+  text_content: string | null;
+}
 
 export async function migrate(): Promise<void> {
   await initDb();
@@ -109,77 +115,120 @@ export async function migrate(): Promise<void> {
 
   // Migration: rename sr_tier → sr_slot if old schema exists
   try {
-    const cols = queryAll(`PRAGMA table_info(cards)`);
-    const hasOldTier = cols.some((c: any) => c.name === 'sr_tier');
-    const hasNewSlot = cols.some((c: any) => c.name === 'sr_slot');
-    const hasGrace = cols.some((c: any) => c.name === 'sr_grace_deadline');
+    const cols = queryAll<PragmaColumnInfo>(`PRAGMA table_info(cards)`);
+    const hasOldTier = cols.some((c) => c.name === 'sr_tier');
+    const hasNewSlot = cols.some((c) => c.name === 'sr_slot');
+    const hasGrace = cols.some((c) => c.name === 'sr_grace_deadline');
 
     if (hasOldTier && !hasNewSlot) {
-      console.log('Migrating: sr_tier → sr_slot, adding sr_grace_deadline...');
+      logger.info('Migrating: sr_tier -> sr_slot, adding sr_grace_deadline...');
       exec(`ALTER TABLE cards RENAME COLUMN sr_tier TO sr_slot`);
     }
     if (!hasGrace && (hasOldTier || hasNewSlot)) {
       exec(`ALTER TABLE cards ADD COLUMN sr_grace_deadline TEXT`);
     }
-  } catch (e) {
+  } catch (_e) {
     // Table might not exist yet on first run
   }
 
   // Migration: rename review_log columns tier_before/after → slot_before/after
   try {
-    const logCols = queryAll(`PRAGMA table_info(review_log)`);
-    const hasOldTierBefore = logCols.some((c: any) => c.name === 'tier_before');
-    const hasNewSlotBefore = logCols.some((c: any) => c.name === 'slot_before');
+    const logCols = queryAll<PragmaColumnInfo>(`PRAGMA table_info(review_log)`);
+    const hasOldTierBefore = logCols.some((c) => c.name === 'tier_before');
+    const hasNewSlotBefore = logCols.some((c) => c.name === 'slot_before');
 
     if (hasOldTierBefore && !hasNewSlotBefore) {
-      console.log('Migrating review_log: tier_before/after → slot_before/after...');
+      logger.info('Migrating review_log: tier_before/after -> slot_before/after...');
       exec(`ALTER TABLE review_log RENAME COLUMN tier_before TO slot_before`);
       exec(`ALTER TABLE review_log RENAME COLUMN tier_after TO slot_after`);
     }
-    if (!logCols.some((c: any) => c.name === 'next_due_at')) {
-      try { exec(`ALTER TABLE review_log ADD COLUMN next_due_at TEXT`); } catch (_) {}
+    if (!logCols.some((c) => c.name === 'next_due_at')) {
+      try { exec(`ALTER TABLE review_log ADD COLUMN next_due_at TEXT`); } catch (_) { /* column may already exist */ }
     }
-    if (!logCols.some((c: any) => c.name === 'review_type')) {
-      try { exec(`ALTER TABLE review_log ADD COLUMN review_type TEXT DEFAULT 'standard'`); } catch (_) {}
+    if (!logCols.some((c) => c.name === 'review_type')) {
+      try { exec(`ALTER TABLE review_log ADD COLUMN review_type TEXT DEFAULT 'standard'`); } catch (_) { /* column may already exist */ }
     }
-  } catch (e) {
+  } catch (_e) {
     // Table might not exist yet
   }
 
   // Migration: add sr_ease_factor column for SM-2 style per-card ease
   try {
-    const cardCols = queryAll(`PRAGMA table_info(cards)`);
-    if (!cardCols.some((c: any) => c.name === 'sr_ease_factor')) {
+    const cardCols = queryAll<PragmaColumnInfo>(`PRAGMA table_info(cards)`);
+    if (!cardCols.some((c) => c.name === 'sr_ease_factor')) {
       exec(`ALTER TABLE cards ADD COLUMN sr_ease_factor REAL DEFAULT 2.5`);
-      console.log('Added sr_ease_factor column to cards');
+      logger.info('Added sr_ease_factor column to cards');
     }
-  } catch (e) {
+  } catch (_e) {
     // Table might not exist yet on first run
   }
 
   // Migration: add card_type column for cloze/typing card types
   try {
-    const cardCols2 = queryAll(`PRAGMA table_info(cards)`);
-    if (!cardCols2.some((c: any) => c.name === 'card_type')) {
+    const cardCols2 = queryAll<PragmaColumnInfo>(`PRAGMA table_info(cards)`);
+    if (!cardCols2.some((c) => c.name === 'card_type')) {
       exec(`ALTER TABLE cards ADD COLUMN card_type TEXT DEFAULT 'standard'`);
-      console.log('Added card_type column to cards');
+      logger.info('Added card_type column to cards');
+    }
+  } catch (_e) {
+    // Table might not exist yet on first run
+  }
+
+  // Migration: add sr_lapse_count column for leech tracking
+  try {
+    const cardColsLapse = queryAll<PragmaColumnInfo>(`PRAGMA table_info(cards)`);
+    if (!cardColsLapse.some((c) => c.name === 'sr_lapse_count')) {
+      exec(`ALTER TABLE cards ADD COLUMN sr_lapse_count INTEGER DEFAULT 0`);
+      logger.info('Added sr_lapse_count column to cards');
+    }
+  } catch (_e) {
+    // Table might not exist yet on first run
+  }
+
+  // Migration: create settings key-value table
+  exec(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+  `);
+
+  // Migration: push_subscriptions table for web push notifications
+  exec(`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+      endpoint TEXT NOT NULL UNIQUE,
+      keys_p256dh TEXT NOT NULL,
+      keys_auth TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  // Seed default settings if not present
+  try {
+    const defaults: [string, string][] = [
+      ['retention_target', '85'],
+      ['daily_new_limit', '8'],
+      ['cards_per_topic_limit', '2'],
+    ];
+    for (const [key, value] of defaults) {
+      const existing = queryOne<{ key: string }>(`SELECT key FROM settings WHERE key = ?`, [key]);
+      if (!existing) {
+        run(`INSERT INTO settings (key, value) VALUES (?, ?)`, [key, value]);
+      }
     }
   } catch (e) {
-    // Table might not exist yet on first run
+    logger.warn({ err: e }, 'Settings seeding skipped');
   }
 
   // Create sr_slot index after migration ensures the column exists
   try {
     exec(`CREATE INDEX IF NOT EXISTS idx_cards_slot ON cards(sr_slot)`);
-  } catch (_) {}
+  } catch (_) { /* index may already exist */ }
 
   // One-time cleanup: remove pronunciation clutter from flashcards.
-  //   1. Strip "Pronunciation: ..." lines entirely
-  //   2. Strip any parenthesized annotations (romanizations like "(klyuch)",
-  //      part-of-speech tags like "(noun/adj)", etc.)
-  // Idempotent — running again on already-cleaned text is a no-op.
   try {
-    const rows = queryAll(
+    const rows = queryAll<MediaBlockText>(
       `SELECT id, text_content FROM media_blocks WHERE block_type = 'text' AND text_content IS NOT NULL`
     );
     let cleaned = 0;
@@ -196,17 +245,14 @@ export async function migrate(): Promise<void> {
         cleaned++;
       }
     }
-    if (cleaned > 0) console.log(`Cleaned parenthetical annotations from ${cleaned} text blocks`);
+    if (cleaned > 0) logger.info(`Cleaned parenthetical annotations from ${cleaned} text blocks`);
   } catch (e) {
-    console.warn('Pronunciation cleanup skipped:', e);
+    logger.warn({ err: e }, 'Pronunciation cleanup skipped');
   }
 
-  // Slot 1 is the in-session learning slot. Slots 2-3 remain retired.
-  // Bump any stale slot 2-3 cards to slot 4 (they shouldn't exist, but
-  // handle legacy data). Slot 1 cards are auto-graduated by the /due
-  // endpoint when their grace deadline passes.
+  // Bump stale slot 2-3 cards to slot 4
   try {
-    const stale23 = queryAll(
+    const stale23 = queryAll<CountRow>(
       `SELECT COUNT(*) AS n FROM cards WHERE sr_slot IN (2, 3)`
     );
     const n23 = stale23[0]?.n ?? 0;
@@ -217,19 +263,15 @@ export async function migrate(): Promise<void> {
         `UPDATE cards SET sr_slot = 4, sr_next_due_at = ?, sr_grace_deadline = ?, updated_at = datetime('now') WHERE sr_slot IN (2, 3)`,
         [oneDayFromNow, graceDeadline]
       );
-      console.log(`Graduated ${n23} cards from retired slots 2-3 to slot 4`);
+      logger.info(`Graduated ${n23} cards from retired slots 2-3 to slot 4`);
     }
   } catch (e) {
-    console.warn('Retired-slot graduation skipped:', e);
+    logger.warn({ err: e }, 'Retired-slot graduation skipped');
   }
 
-  // One-time cleanup: cards that were promoted from slot 0 → slot 4 by a
-  // wrong answer (the pre-2026-04-17 SR bug) get reset to slot 0. Only
-  // applies to cards whose MOST RECENT review was the bad wrong-on-new
-  // promotion — cards reviewed correctly since are left alone. Idempotent:
-  // once reset to slot 0, the WHERE clause matches nothing on rerun.
+  // One-time cleanup: wrong-on-new cards reset to slot 0
   try {
-    const affected = queryOne(
+    const affected = queryOne<CountRow>(
       `SELECT COUNT(*) AS n FROM cards WHERE sr_slot > 0 AND id IN (
          SELECT rl.card_id FROM review_log rl
          JOIN (SELECT card_id, MAX(reviewed_at) AS m FROM review_log GROUP BY card_id) lt
@@ -248,17 +290,52 @@ export async function migrate(): Promise<void> {
            WHERE rl.result = 'wrong' AND rl.slot_before = 0 AND rl.slot_after > 0
          )`
       );
-      console.log(`Reset ${n} wrong-on-new cards back to slot 0`);
+      logger.info(`Reset ${n} wrong-on-new cards back to slot 0`);
     }
   } catch (e) {
-    console.warn('Wrong-on-new reset skipped:', e);
+    logger.warn({ err: e }, 'Wrong-on-new reset skipped');
   }
 
-  console.log('Database migrated successfully');
+  // Migration: FTS5 full-text search index on card content
+  try {
+    // Create FTS5 virtual table if it doesn't exist
+    exec(`CREATE VIRTUAL TABLE IF NOT EXISTS cards_fts USING fts5(card_id, content)`);
+
+    // Check if FTS table needs population (empty or stale)
+    const ftsCount = queryOne(`SELECT COUNT(*) as count FROM cards_fts`);
+    const cardCount = queryOne(
+      `SELECT COUNT(DISTINCT c.id) as count
+       FROM cards c
+       JOIN card_sides s ON s.card_id = c.id
+       JOIN media_blocks mb ON mb.card_side_id = s.id
+       WHERE mb.block_type = 'text' AND mb.text_content IS NOT NULL`
+    );
+
+    if ((ftsCount?.count || 0) < (cardCount?.count || 0)) {
+      // Rebuild: clear and repopulate
+      run(`DELETE FROM cards_fts`);
+      const rows = queryAll(
+        `SELECT c.id as card_id, GROUP_CONCAT(mb.text_content, ' ') as content
+         FROM cards c
+         JOIN card_sides s ON s.card_id = c.id
+         JOIN media_blocks mb ON mb.card_side_id = s.id
+         WHERE mb.block_type = 'text' AND mb.text_content IS NOT NULL
+         GROUP BY c.id`
+      );
+      for (const row of rows) {
+        run(`INSERT INTO cards_fts (card_id, content) VALUES (?, ?)`, [row.card_id, row.content]);
+      }
+      if (rows.length > 0) logger.info(`Populated FTS5 index with ${rows.length} cards`);
+    }
+  } catch (e) {
+    logger.warn({ err: e }, 'FTS5 migration skipped');
+  }
+
+  logger.info('Database migrated successfully');
 }
 
 // Run directly when called as a script
 const isDirectRun = process.argv[1]?.includes('migrate');
 if (isDirectRun) {
-  initDb().then(() => migrate()).catch(console.error);
+  initDb().then(() => migrate()).catch((err) => logger.error({ err }, 'Migration failed'));
 }

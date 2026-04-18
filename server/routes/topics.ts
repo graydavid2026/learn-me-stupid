@@ -1,13 +1,40 @@
-import { Router } from 'express';
-import { queryAll, queryOne, run } from '../db/index.js';
+import { Router, Request, Response } from 'express';
+import { queryAll, queryOne, run, TopicRow, CardSideRow, MaxOrderRow } from '../db/index.js';
 import { v4 as uuid } from 'uuid';
+import logger from '../logger.js';
 
 const router = Router();
 
+interface TopicWithCounts extends TopicRow {
+  card_count: number;
+  due_count: number;
+}
+
+interface SetSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  card_count: number;
+}
+
+interface SampleCard {
+  id: string;
+  set_name: string;
+}
+
+interface TextBlock {
+  text_content: string | null;
+}
+
 // GET /api/topics — List all topics with card counts and due counts
-router.get('/', (_req, res) => {
+// Supports pagination: ?page=1&limit=20
+// Default (no params) returns all items for backwards compatibility
+router.get('/', (req: Request, res: Response) => {
   try {
-    const topics = queryAll(`
+    const { page, limit } = req.query;
+    const wantsPagination = page !== undefined || limit !== undefined;
+
+    let baseSql = `
       SELECT
         t.*,
         COALESCE(cc.card_count, 0) as card_count,
@@ -27,45 +54,74 @@ router.get('/', (_req, res) => {
         GROUP BY cs.topic_id
       ) dc ON dc.topic_id = t.id
       ORDER BY t.sort_order, t.created_at
-    `);
-    res.json(topics);
+    `;
+
+    if (!wantsPagination) {
+      const topics = queryAll<TopicWithCounts>(baseSql);
+      return res.json(topics);
+    }
+
+    const pageNum = Math.max(1, parseInt(page as string, 10) || 1);
+    const pageSize = Math.max(1, Math.min(100, parseInt(limit as string, 10) || 20));
+    const offset = (pageNum - 1) * pageSize;
+
+    const totalRow = queryOne<{ count: number }>('SELECT COUNT(*) as count FROM topics');
+    const total = totalRow?.count || 0;
+
+    baseSql += ' LIMIT ? OFFSET ?';
+    const topics = queryAll<TopicWithCounts>(baseSql, [pageSize, offset]);
+
+    res.json({ data: topics, total, page: pageNum, pageSize });
   } catch (err) {
-    console.error('Error fetching topics:', err);
+    logger.error({ err }, 'Error fetching topics');
     res.status(500).json({ error: 'Failed to fetch topics' });
   }
 });
 
 // POST /api/topics — Create topic
-router.post('/', (req, res) => {
+router.post('/', (req: Request, res: Response) => {
   try {
-    const { name, description, color, icon, parent_topic_id } = req.body;
+    const { name, description, color, icon, parent_topic_id } = req.body as {
+      name?: string;
+      description?: string;
+      color?: string;
+      icon?: string;
+      parent_topic_id?: string;
+    };
     if (!name?.trim()) {
       return res.status(400).json({ error: 'Name is required' });
     }
-    const maxOrder = queryOne('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM topics');
+    const maxOrder = queryOne<MaxOrderRow>('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM topics');
     const id = uuid().replace(/-/g, '').slice(0, 16);
 
     run(
       `INSERT INTO topics (id, name, description, color, icon, parent_topic_id, sort_order)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [id, name.trim(), description || null, color || '#6366f1', icon || 'book', parent_topic_id || null, maxOrder.next]
+      [id, name.trim(), description || null, color || '#6366f1', icon || 'book', parent_topic_id || null, maxOrder!.next]
     );
 
-    const topic = queryOne('SELECT * FROM topics WHERE id = ?', [id]);
+    const topic = queryOne<TopicRow>('SELECT * FROM topics WHERE id = ?', [id]);
     res.status(201).json(topic);
   } catch (err) {
-    console.error('Error creating topic:', err);
+    logger.error({ err }, 'Error creating topic');
     res.status(500).json({ error: 'Failed to create topic' });
   }
 });
 
 // PUT /api/topics/:id — Update topic
-router.put('/:id', (req, res) => {
+router.put('/:id', (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, description, color, icon, parent_topic_id, sort_order } = req.body;
+    const { name, description, color, icon, parent_topic_id, sort_order } = req.body as {
+      name?: string;
+      description?: string;
+      color?: string;
+      icon?: string;
+      parent_topic_id?: string | null;
+      sort_order?: number;
+    };
 
-    const existing = queryOne('SELECT * FROM topics WHERE id = ?', [id]);
+    const existing = queryOne<TopicRow>('SELECT * FROM topics WHERE id = ?', [id]);
     if (!existing) return res.status(404).json({ error: 'Topic not found' });
 
     run(
@@ -89,25 +145,22 @@ router.put('/:id', (req, res) => {
       ]
     );
 
-    const topic = queryOne('SELECT * FROM topics WHERE id = ?', [id]);
+    const topic = queryOne<TopicRow>('SELECT * FROM topics WHERE id = ?', [id]);
     res.json(topic);
   } catch (err) {
-    console.error('Error updating topic:', err);
+    logger.error({ err }, 'Error updating topic');
     res.status(500).json({ error: 'Failed to update topic' });
   }
 });
 
 // GET /api/topics/:id/prompt — Generate an LLM prompt seeded with topic context
-// so the user can paste it into Claude/GPT and get new flashcards back in a
-// format that either (a) maps cleanly to the Create Card UI or (b) can be
-// dropped into Claude Code for bulk insertion.
-router.get('/:id/prompt', (req, res) => {
+router.get('/:id/prompt', (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const topic: any = queryOne('SELECT * FROM topics WHERE id = ?', [id]);
+    const topic = queryOne<TopicRow>('SELECT * FROM topics WHERE id = ?', [id]);
     if (!topic) return res.status(404).json({ error: 'Topic not found' });
 
-    const sets: any[] = queryAll(
+    const sets = queryAll<SetSummary>(
       `SELECT cs.id, cs.name, cs.description, COUNT(c.id) as card_count
        FROM card_sets cs
        LEFT JOIN cards c ON c.card_set_id = cs.id
@@ -118,7 +171,7 @@ router.get('/:id/prompt', (req, res) => {
     );
 
     // Sample up to 8 cards from this topic to show the LLM the existing style.
-    const sampleCards: any[] = queryAll(
+    const sampleCards = queryAll<SampleCard>(
       `SELECT c.id, cs.name as set_name
        FROM cards c
        JOIN card_sets cs ON cs.id = c.card_set_id
@@ -129,12 +182,12 @@ router.get('/:id/prompt', (req, res) => {
     );
 
     const cardTextOfSide = (cardId: string, side: 0 | 1): string => {
-      const sideRow: any = queryOne(
+      const sideRow = queryOne<CardSideRow>(
         'SELECT id FROM card_sides WHERE card_id = ? AND side = ?',
         [cardId, side]
       );
       if (!sideRow) return '';
-      const blocks: any[] = queryAll(
+      const blocks = queryAll<TextBlock>(
         `SELECT text_content FROM media_blocks
          WHERE card_side_id = ? AND block_type = 'text'
          ORDER BY sort_order`,
@@ -214,22 +267,22 @@ A single JSON blob I can hand to Claude Code with the instruction "insert these 
 
     res.json({ prompt });
   } catch (err) {
-    console.error('Error generating topic prompt:', err);
+    logger.error({ err }, 'Error generating topic prompt');
     res.status(500).json({ error: 'Failed to generate prompt' });
   }
 });
 
 // DELETE /api/topics/:id — Delete topic (cascades)
-router.delete('/:id', (req, res) => {
+router.delete('/:id', (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const existing = queryOne('SELECT * FROM topics WHERE id = ?', [id]);
+    const existing = queryOne<TopicRow>('SELECT * FROM topics WHERE id = ?', [id]);
     if (!existing) return res.status(404).json({ error: 'Topic not found' });
 
     run('DELETE FROM topics WHERE id = ?', [id]);
     res.json({ success: true });
   } catch (err) {
-    console.error('Error deleting topic:', err);
+    logger.error({ err }, 'Error deleting topic');
     res.status(500).json({ error: 'Failed to delete topic' });
   }
 });

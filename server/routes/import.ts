@@ -1,6 +1,7 @@
-import { Router } from 'express';
-import { queryOne, run, getDb } from '../db/index.js';
+import { Router, Request, Response } from 'express';
+import { queryOne, run, getDb, MaxOrderRow } from '../db/index.js';
 import { v4 as uuid } from 'uuid';
+import logger from '../logger.js';
 
 const router = Router();
 
@@ -8,36 +9,72 @@ function genId(): string {
   return uuid().replace(/-/g, '').slice(0, 16);
 }
 
+interface ImportMediaBlock {
+  block_type?: string;
+  sort_order?: number;
+  text_content?: string | null;
+  file_path?: string | null;
+  file_name?: string | null;
+  file_size?: number | null;
+  mime_type?: string | null;
+  youtube_url?: string | null;
+  youtube_embed_id?: string | null;
+}
+
+interface ImportCard {
+  tags?: string[];
+  front?: ImportMediaBlock[];
+  back?: ImportMediaBlock[];
+}
+
+interface ImportSet {
+  name?: string;
+  description?: string | null;
+  cards?: ImportCard[];
+}
+
+interface ImportTopic {
+  name?: string;
+  description?: string | null;
+  color?: string;
+  icon?: string;
+  sets?: ImportSet[];
+}
+
+interface ImportJsonBody {
+  topics?: ImportTopic[];
+}
+
 /** Find or create a topic by name, returning its id. */
 function findOrCreateTopic(name: string): string {
-  const existing = queryOne('SELECT id FROM topics WHERE name = ?', [name.trim()]);
+  const existing = queryOne<{ id: string }>('SELECT id FROM topics WHERE name = ?', [name.trim()]);
   if (existing) return existing.id;
 
   const id = genId();
-  const maxOrder = queryOne('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM topics');
+  const maxOrder = queryOne<MaxOrderRow>('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM topics');
   run(
     `INSERT INTO topics (id, name, sort_order) VALUES (?, ?, ?)`,
-    [id, name.trim(), maxOrder.next]
+    [id, name.trim(), maxOrder!.next]
   );
   return id;
 }
 
 /** Find or create a card set by name within a topic, returning its id. */
 function findOrCreateSet(topicId: string, name: string): string {
-  const existing = queryOne(
+  const existing = queryOne<{ id: string }>(
     'SELECT id FROM card_sets WHERE topic_id = ? AND name = ?',
     [topicId, name.trim()]
   );
   if (existing) return existing.id;
 
   const id = genId();
-  const maxOrder = queryOne(
+  const maxOrder = queryOne<MaxOrderRow>(
     'SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM card_sets WHERE topic_id = ?',
     [topicId]
   );
   run(
     `INSERT INTO card_sets (id, topic_id, name, sort_order) VALUES (?, ?, ?, ?)`,
-    [id, topicId, name.trim(), maxOrder.next]
+    [id, topicId, name.trim(), maxOrder!.next]
   );
   return id;
 }
@@ -50,14 +87,14 @@ function createCard(
   tags: string[] = []
 ): string {
   const cardId = genId();
-  const maxOrder = queryOne(
+  const maxOrder = queryOne<MaxOrderRow>(
     'SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM cards WHERE card_set_id = ?',
     [setId]
   );
 
   run(
     `INSERT INTO cards (id, card_set_id, sort_order, tags) VALUES (?, ?, ?, ?)`,
-    [cardId, setId, maxOrder.next, JSON.stringify(tags)]
+    [cardId, setId, maxOrder!.next, JSON.stringify(tags)]
   );
 
   // Front side
@@ -87,7 +124,7 @@ function createCard(
 
 /**
  * Parse CSV text into rows. Handles quoted fields with commas, newlines, and
- * escaped quotes (doubled ""). This is intentionally simple — no external deps.
+ * escaped quotes (doubled ""). This is intentionally simple -- no external deps.
  */
 function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
@@ -141,9 +178,9 @@ function parseCsv(text: string): string[][] {
 }
 
 // POST /api/import/csv
-router.post('/csv', (req, res) => {
+router.post('/csv', (req: Request, res: Response) => {
   try {
-    const { csv } = req.body;
+    const { csv } = req.body as { csv?: string };
     if (!csv || typeof csv !== 'string') {
       return res.status(400).json({ error: 'Request body must include a "csv" string field' });
     }
@@ -189,8 +226,9 @@ router.post('/csv', (req, res) => {
           const setId = findOrCreateSet(topicId, setName);
           createCard(setId, front, back);
           imported++;
-        } catch (rowErr: any) {
-          errors.push(`Row ${r + 1}: ${rowErr.message}`);
+        } catch (rowErr: unknown) {
+          const message = rowErr instanceof Error ? rowErr.message : String(rowErr);
+          errors.push(`Row ${r + 1}: ${message}`);
         }
       }
       d.exec('COMMIT');
@@ -201,15 +239,15 @@ router.post('/csv', (req, res) => {
 
     res.json({ imported, errors });
   } catch (err) {
-    console.error('Error importing CSV:', err);
+    logger.error({ err }, 'Error importing CSV');
     res.status(500).json({ error: 'Failed to import CSV' });
   }
 });
 
 // POST /api/import/json
-router.post('/json', (req, res) => {
+router.post('/json', (req: Request, res: Response) => {
   try {
-    const data = req.body;
+    const data = req.body as ImportJsonBody;
     if (!data || !Array.isArray(data.topics)) {
       return res.status(400).json({
         error: 'Request body must match the JSON export format with a "topics" array',
@@ -251,8 +289,8 @@ router.post('/json', (req, res) => {
 
           const cards = Array.isArray(set.cards) ? set.cards : [];
           for (const card of cards) {
-            const frontBlocks = Array.isArray(card.front) ? card.front : [];
-            const backBlocks = Array.isArray(card.back) ? card.back : [];
+            const frontBlocks: ImportMediaBlock[] = Array.isArray(card.front) ? card.front : [];
+            const backBlocks: ImportMediaBlock[] = Array.isArray(card.back) ? card.back : [];
 
             if (frontBlocks.length === 0 && backBlocks.length === 0) {
               skipped++;
@@ -260,16 +298,16 @@ router.post('/json', (req, res) => {
             }
 
             const cardId = genId();
-            const maxOrder = queryOne(
+            const maxOrder = queryOne<MaxOrderRow>(
               'SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM cards WHERE card_set_id = ?',
               [setId]
             );
             const tags = Array.isArray(card.tags) ? card.tags : [];
 
-            // Create card — fresh SR state (no importing SR data)
+            // Create card -- fresh SR state (no importing SR data)
             run(
               `INSERT INTO cards (id, card_set_id, sort_order, tags) VALUES (?, ?, ?, ?)`,
-              [cardId, setId, maxOrder.next, JSON.stringify(tags)]
+              [cardId, setId, maxOrder!.next, JSON.stringify(tags)]
             );
 
             // Front side with all blocks
@@ -318,7 +356,7 @@ router.post('/json', (req, res) => {
 
     res.json({ imported, skipped });
   } catch (err) {
-    console.error('Error importing JSON:', err);
+    logger.error({ err }, 'Error importing JSON');
     res.status(500).json({ error: 'Failed to import JSON' });
   }
 });

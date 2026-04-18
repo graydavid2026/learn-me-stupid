@@ -1,16 +1,56 @@
-import { Router } from 'express';
-import { queryAll, queryOne } from '../db/index.js';
+import { Router, Request, Response } from 'express';
+import { queryAll, queryOne, CardSideRow, CardRow, TopicRow, CardSetRow, CountRow, DayRow } from '../db/index.js';
+import logger from '../logger.js';
 
 const router = Router();
 
+interface TextBlock {
+  text_content: string | null;
+}
+
+interface ExportMediaBlock {
+  block_type: string;
+  sort_order: number;
+  text_content: string | null;
+  file_path: string | null;
+  file_name: string | null;
+  file_size: number | null;
+  mime_type: string | null;
+  youtube_url: string | null;
+  youtube_embed_id: string | null;
+}
+
+interface ExportCardRow {
+  id: string;
+  sr_slot: number;
+  sr_total_reviews: number;
+  sr_total_correct: number;
+  sr_last_reviewed_at: string | null;
+  sr_next_due_at: string | null;
+  created_at: string;
+  set_name: string;
+  topic_name: string;
+}
+
+interface AccuracyRow {
+  topic_name: string;
+  reviews: number;
+  correct: number;
+}
+
+interface SlotDistRow {
+  slot: number;
+  count: number;
+}
+
 /** Extract text content from a card side's media blocks, joined with newline. */
 function sideText(cardId: string, side: 0 | 1): string {
-  const sideRow: any = queryOne(
+  const sideRow = queryOne<CardSideRow>(
     'SELECT id FROM card_sides WHERE card_id = ? AND side = ?',
     [cardId, side]
   );
   if (!sideRow) return '';
-  const blocks: any[] = queryAll(
+  const blocks = queryAll<TextBlock>(
     `SELECT text_content FROM media_blocks
      WHERE card_side_id = ? AND block_type = 'text'
      ORDER BY sort_order`,
@@ -24,8 +64,8 @@ function sideText(cardId: string, side: 0 | 1): string {
 }
 
 /** Get all media blocks for a card side, preserving full block data. */
-function sideBlocks(cardSideId: string): any[] {
-  return queryAll(
+function sideBlocks(cardSideId: string): ExportMediaBlock[] {
+  return queryAll<ExportMediaBlock>(
     `SELECT block_type, sort_order, text_content, file_path, file_name, file_size, mime_type, youtube_url, youtube_embed_id
      FROM media_blocks WHERE card_side_id = ? ORDER BY sort_order`,
     [cardSideId]
@@ -41,9 +81,9 @@ function csvEscape(val: string): string {
 }
 
 // GET /api/export/csv
-router.get('/csv', (_req, res) => {
+router.get('/csv', (_req: Request, res: Response) => {
   try {
-    const rows = queryAll(
+    const rows = queryAll<ExportCardRow>(
       `SELECT c.id, c.sr_slot, c.sr_total_reviews, c.sr_total_correct,
               c.sr_last_reviewed_at, c.sr_next_due_at, c.created_at,
               cs.name as set_name, t.name as topic_name
@@ -59,7 +99,7 @@ router.get('/csv', (_req, res) => {
       'sr_last_reviewed_at', 'sr_next_due_at', 'created_at',
     ].join(',');
 
-    const lines = rows.map((r: any) => {
+    const lines = rows.map((r) => {
       const front = sideText(r.id, 0);
       const back = sideText(r.id, 1);
       return [
@@ -83,21 +123,21 @@ router.get('/csv', (_req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="learn-me-stupid-export-${today}.csv"`);
     res.send(csv);
   } catch (err) {
-    console.error('Error exporting CSV:', err);
+    logger.error({ err }, 'Error exporting CSV');
     res.status(500).json({ error: 'Failed to export CSV' });
   }
 });
 
 // GET /api/export/json
-router.get('/json', (_req, res) => {
+router.get('/json', (_req: Request, res: Response) => {
   try {
-    const topics = queryAll('SELECT * FROM topics ORDER BY sort_order, created_at');
+    const topics = queryAll<TopicRow>('SELECT * FROM topics ORDER BY sort_order, created_at');
 
     const result = {
       exportedAt: new Date().toISOString(),
       version: '1.0',
-      topics: topics.map((t: any) => {
-        const sets = queryAll(
+      topics: topics.map((t) => {
+        const sets = queryAll<CardSetRow>(
           'SELECT * FROM card_sets WHERE topic_id = ? ORDER BY sort_order, created_at',
           [t.id]
         );
@@ -106,21 +146,21 @@ router.get('/json', (_req, res) => {
           description: t.description || null,
           color: t.color,
           icon: t.icon,
-          sets: sets.map((s: any) => {
-            const cards = queryAll(
+          sets: sets.map((s) => {
+            const cards = queryAll<CardRow>(
               'SELECT * FROM cards WHERE card_set_id = ? ORDER BY sort_order',
               [s.id]
             );
             return {
               name: s.name,
               description: s.description || null,
-              cards: cards.map((c: any) => {
-                const sides = queryAll(
+              cards: cards.map((c) => {
+                const sides = queryAll<CardSideRow>(
                   'SELECT * FROM card_sides WHERE card_id = ? ORDER BY side',
                   [c.id]
                 );
-                const frontSide = sides.find((sd: any) => sd.side === 0);
-                const backSide = sides.find((sd: any) => sd.side === 1);
+                const frontSide = sides.find((sd) => sd.side === 0);
+                const backSide = sides.find((sd) => sd.side === 1);
                 return {
                   front: frontSide ? sideBlocks(frontSide.id) : [],
                   back: backSide ? sideBlocks(backSide.id) : [],
@@ -147,26 +187,26 @@ router.get('/json', (_req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="learn-me-stupid-backup-${today}.json"`);
     res.json(result);
   } catch (err) {
-    console.error('Error exporting JSON:', err);
+    logger.error({ err }, 'Error exporting JSON');
     res.status(500).json({ error: 'Failed to export JSON' });
   }
 });
 
 // GET /api/export/stats
-router.get('/stats', (_req, res) => {
+router.get('/stats', (_req: Request, res: Response) => {
   try {
-    const totalCards = queryOne('SELECT COUNT(*) as count FROM cards')?.count || 0;
+    const totalCards = queryOne<CountRow>('SELECT COUNT(*) as count FROM cards')?.count || 0;
 
-    const totalReviews = queryOne(
+    const totalReviews = queryOne<CountRow>(
       'SELECT COUNT(*) as count FROM review_log'
     )?.count || 0;
 
-    const totalCorrect = queryOne(
+    const totalCorrect = queryOne<CountRow>(
       "SELECT COUNT(*) as count FROM review_log WHERE result = 'correct'"
     )?.count || 0;
 
     // Accuracy by topic
-    const accuracyByTopic = queryAll(
+    const accuracyByTopic = queryAll<AccuracyRow>(
       `SELECT t.name as topic_name,
               COUNT(rl.id) as reviews,
               SUM(CASE WHEN rl.result = 'correct' THEN 1 ELSE 0 END) as correct
@@ -176,7 +216,7 @@ router.get('/stats', (_req, res) => {
        JOIN topics t ON t.id = cs.topic_id
        GROUP BY t.id
        ORDER BY t.name`
-    ).map((r: any) => ({
+    ).map((r) => ({
       topic: r.topic_name,
       reviews: r.reviews,
       correct: r.correct,
@@ -184,14 +224,14 @@ router.get('/stats', (_req, res) => {
     }));
 
     // Slot distribution
-    const slotDistribution = queryAll(
+    const slotDistribution = queryAll<SlotDistRow>(
       `SELECT sr_slot as slot, COUNT(*) as count
        FROM cards WHERE sr_is_active = 1
        GROUP BY sr_slot ORDER BY sr_slot`
     );
 
     // Streak
-    const recentDays = queryAll(
+    const recentDays = queryAll<DayRow>(
       'SELECT DISTINCT date(reviewed_at) as day FROM review_log ORDER BY day DESC LIMIT 60'
     );
     let streak = 0;
@@ -217,7 +257,7 @@ router.get('/stats', (_req, res) => {
       streak,
     });
   } catch (err) {
-    console.error('Error fetching export stats:', err);
+    logger.error({ err }, 'Error fetching export stats');
     res.status(500).json({ error: 'Failed to fetch stats' });
   }
 });

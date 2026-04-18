@@ -64,9 +64,10 @@ export interface CardFull {
   sr_total_reviews: number;
   sr_total_correct: number;
   sr_is_active: number;
-  card_type: 'standard' | 'cloze' | 'typing';
+  card_type: 'standard' | 'cloze' | 'typing' | 'reversible';
   front: CardSideFull;
   back: CardSideFull;
+  reverse?: boolean;
 }
 
 interface AppState {
@@ -131,6 +132,9 @@ interface AppState {
 }
 
 const API = '/api';
+
+// Deduplication: if fetchTopics is called concurrently, reuse the in-flight promise
+let pendingTopicsFetch: Promise<void> | null = null;
 
 async function fetchWithTimeout(url: string, options?: RequestInit, timeoutMs = 10000): Promise<Response> {
   const controller = new AbortController();
@@ -217,15 +221,25 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   fetchTopics: async () => {
-    set({ loadingTopics: true });
-    try {
-      const res = await fetchWithTimeout(`${API}/topics`);
-      const topics = await res.json();
-      set({ topics, loadingTopics: false });
-    } catch (err) {
-      console.error('Failed to fetch topics:', err);
-      set({ loadingTopics: false, fetchError: 'Failed to load topics. Please check your connection and try again.' });
-    }
+    // Deduplicate concurrent calls: reuse the in-flight promise if one exists
+    if (pendingTopicsFetch) return pendingTopicsFetch;
+
+    const doFetch = async () => {
+      set({ loadingTopics: true });
+      try {
+        const res = await fetchWithTimeout(`${API}/topics`);
+        const topics = await res.json();
+        set({ topics, loadingTopics: false });
+      } catch (err) {
+        console.error('Failed to fetch topics:', err);
+        set({ loadingTopics: false, fetchError: 'Failed to load topics. Please check your connection and try again.' });
+      } finally {
+        pendingTopicsFetch = null;
+      }
+    };
+
+    pendingTopicsFetch = doFetch();
+    return pendingTopicsFetch;
   },
 
   selectTopic: (id) => {

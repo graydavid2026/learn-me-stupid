@@ -199,6 +199,8 @@ export interface ReviewResult {
   scheduleLocked: boolean;
   reviewType: 'standard' | 'early';
   easeAfter: number;
+  /** True when the card lapsed (wrong answer at slot 5+) */
+  lapsed: boolean;
 }
 
 /**
@@ -220,18 +222,48 @@ export interface ReviewResult {
  *
  * Ease factor updated on every review via SM-2 formula.
  */
+/**
+ * Apply a retention-based interval multiplier.
+ * If retention is below target for the slot range, intervals are compressed
+ * (multiplied by intervalMultiplier, typically 0.9) to increase review frequency.
+ */
+export function calculateNextDueWithRetention(
+  slot: number,
+  ease?: number,
+  intervalMultiplier?: number,
+): string {
+  const clampedSlot = Math.max(slot, 1);
+  const baseInterval = SLOT_INTERVALS_MS[Math.min(clampedSlot, MAX_SLOT)];
+
+  let interval = baseInterval;
+  if (slot >= 5 && ease !== undefined) {
+    interval = Math.round(baseInterval * (ease / DEFAULT_EASE));
+  }
+
+  // Apply retention-based compression
+  if (intervalMultiplier !== undefined && intervalMultiplier > 0 && intervalMultiplier < 1) {
+    interval = Math.round(interval * intervalMultiplier);
+  }
+
+  return new Date(Date.now() + interval).toISOString();
+}
+
 export function processReview(
   result: 'correct' | 'wrong',
   currentSlot: number,
   nextDueAt: string | null,
   currentEase?: number,
   responseTimeMs?: number | null,
+  intervalMultiplier?: number,
 ): ReviewResult {
   const ease = currentEase ?? DEFAULT_EASE;
   const quality = calculateQuality(result, responseTimeMs);
   const cardIsDue = isDue(nextDueAt);
   const isNew = currentSlot === 0;
   const isLearning = currentSlot === LEARNING_SLOT;
+
+  // A lapse occurs when a review-phase card (slot 5+) is answered wrong
+  const lapsed = result === 'wrong' && currentSlot >= 5;
 
   // Early review — card not yet due (only for review-phase cards, not learning)
   if (!isNew && !isLearning && !cardIsDue) {
@@ -242,6 +274,7 @@ export function processReview(
       scheduleLocked: true,
       reviewType: 'early',
       easeAfter: ease,
+      lapsed: false,
     };
   }
 
@@ -262,6 +295,7 @@ export function processReview(
         scheduleLocked: false,
         reviewType: 'standard',
         easeAfter: updateEase(ease, result, quality),
+        lapsed: false,
       };
     }
   } else if (isLearning) {
@@ -279,6 +313,7 @@ export function processReview(
         scheduleLocked: false,
         reviewType: 'standard',
         easeAfter: newEase,
+        lapsed: false,
       };
     }
   } else {
@@ -297,7 +332,7 @@ export function processReview(
     }
   }
 
-  const newNextDueAt = calculateNextDue(newSlot, newEase);
+  const newNextDueAt = calculateNextDueWithRetention(newSlot, newEase, intervalMultiplier);
   const newGraceDeadline = calculateGraceDeadline(newNextDueAt, newSlot);
 
   return {
@@ -307,5 +342,6 @@ export function processReview(
     scheduleLocked: false,
     reviewType: 'standard',
     easeAfter: newEase,
+    lapsed,
   };
 }

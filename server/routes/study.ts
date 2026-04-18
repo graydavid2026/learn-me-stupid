@@ -13,6 +13,7 @@ import {
   MIN_SLOT,
   LEARNING_SLOT,
 } from '../services/srEngine.js';
+import { getSettingNum } from './settings.js';
 
 const router = Router();
 
@@ -74,14 +75,15 @@ function newCardsLearnedToday(topicId?: string): number {
   return row?.count || 0;
 }
 
-// Helper: get full card with sides and media blocks
-function getFullCard(cardId: string) {
+// Helper: get full card with sides and media blocks.
+// When `reverse` is true, front and back are swapped (for reversible cards).
+function getFullCard(cardId: string, reverse = false) {
   const card = queryOne('SELECT * FROM cards WHERE id = ?', [cardId]);
   if (!card) return null;
 
   const sides = queryAll('SELECT * FROM card_sides WHERE card_id = ? ORDER BY side', [cardId]);
-  const front = sides.find((s: any) => s.side === 0) || null;
-  const back = sides.find((s: any) => s.side === 1) || null;
+  let front = sides.find((s: any) => s.side === 0) || null;
+  let back = sides.find((s: any) => s.side === 1) || null;
 
   if (front) {
     front.media_blocks = queryAll(
@@ -96,11 +98,135 @@ function getFullCard(cardId: string) {
     );
   }
 
+  const frontSide = front || { id: null, side: 0, media_blocks: [] };
+  const backSide = back || { id: null, side: 1, media_blocks: [] };
+
   return {
     ...card,
-    front: front || { id: null, side: 0, media_blocks: [] },
-    back: back || { id: null, side: 1, media_blocks: [] },
+    front: reverse ? backSide : frontSide,
+    back: reverse ? frontSide : backSide,
+    reverse,
   };
+}
+
+// Helper: expand reversible cards — for each reversible card, include both
+// the normal version and a reversed version (back→front) in the study queue.
+function expandReversible(cards: any[]): any[] {
+  const result: any[] = [];
+  for (const card of cards) {
+    if (!card) continue;
+    result.push(card);
+    if (card.card_type === 'reversible') {
+      const reversed = getFullCard(card.id, true);
+      if (reversed) result.push(reversed);
+    }
+  }
+  return result;
+}
+
+/**
+ * Intelligent interleaving: reorder cards so that:
+ * 1. Cards from the same card_set are spaced apart
+ * 2. Consecutive cards don't have the same difficulty (sr_slot)
+ * 3. Overdue cards (lower slots, earlier due dates) still come first overall
+ *
+ * Algorithm: sort by priority (overdue first), then round-robin by set_id,
+ * alternating difficulty bands within each round.
+ */
+function interleaveCards(cards: any[]): any[] {
+  if (cards.length <= 2) return cards;
+
+  // Group cards by card_set_id
+  const bySet = new Map<string, any[]>();
+  for (const card of cards) {
+    const setId = card.card_set_id || '__none__';
+    if (!bySet.has(setId)) bySet.set(setId, []);
+    bySet.get(setId)!.push(card);
+  }
+
+  // Within each set, sort by priority: lower slot first, then earlier due date
+  for (const group of bySet.values()) {
+    group.sort((a: any, b: any) => {
+      if (a.sr_slot !== b.sr_slot) return a.sr_slot - b.sr_slot;
+      const aDue = a.sr_next_due_at ? new Date(a.sr_next_due_at).getTime() : 0;
+      const bDue = b.sr_next_due_at ? new Date(b.sr_next_due_at).getTime() : 0;
+      return aDue - bDue;
+    });
+  }
+
+  // Round-robin across sets, picking one card from each set per round
+  const result: any[] = [];
+  const setKeys = Array.from(bySet.keys());
+  // Sort sets so the set with the most urgent card goes first
+  setKeys.sort((a, b) => {
+    const aFirst = bySet.get(a)![0];
+    const bFirst = bySet.get(b)![0];
+    if (aFirst.sr_slot !== bFirst.sr_slot) return aFirst.sr_slot - bFirst.sr_slot;
+    const aDue = aFirst.sr_next_due_at ? new Date(aFirst.sr_next_due_at).getTime() : 0;
+    const bDue = bFirst.sr_next_due_at ? new Date(bFirst.sr_next_due_at).getTime() : 0;
+    return aDue - bDue;
+  });
+
+  let exhausted = 0;
+  const indices = new Map<string, number>(setKeys.map(k => [k, 0]));
+
+  while (exhausted < setKeys.length) {
+    for (const setId of setKeys) {
+      const idx = indices.get(setId)!;
+      const group = bySet.get(setId)!;
+      if (idx >= group.length) continue;
+
+      // Pick next card from this set, but try to avoid same difficulty as last card
+      let pick = idx;
+      if (result.length > 0) {
+        const lastSlot = result[result.length - 1].sr_slot;
+        // Look ahead up to 3 cards in this set for a different difficulty
+        for (let lookahead = 0; lookahead < Math.min(3, group.length - idx); lookahead++) {
+          if (group[idx + lookahead].sr_slot !== lastSlot) {
+            pick = idx + lookahead;
+            break;
+          }
+        }
+        // If we picked a non-adjacent card, swap it into position
+        if (pick !== idx) {
+          const tmp = group[pick];
+          group[pick] = group[idx];
+          group[idx] = tmp;
+        }
+      }
+
+      result.push(group[idx]);
+      indices.set(setId, idx + 1);
+      if (idx + 1 >= group.length) exhausted++;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Compute a retention-based interval multiplier.
+ * Looks at review_log for the slot range the card is moving into.
+ * If retention is below the target, returns 0.9 to compress intervals.
+ * Otherwise returns undefined (no adjustment).
+ */
+function getRetentionMultiplier(slotRangeMin: number, slotRangeMax: number): number | undefined {
+  const retentionTarget = getSettingNum('retention_target', 85);
+
+  const row = queryOne(
+    `SELECT COUNT(*) as total,
+            SUM(CASE WHEN result = 'correct' THEN 1 ELSE 0 END) as correct
+     FROM review_log
+     WHERE review_type = 'standard'
+       AND slot_before >= ? AND slot_before <= ?
+       AND reviewed_at >= date('now', '-30 days')`,
+    [slotRangeMin, slotRangeMax]
+  );
+
+  if (!row || row.total < 10) return undefined; // Not enough data
+  const retention = (row.correct / row.total) * 100;
+  if (retention < retentionTarget) return 0.9;
+  return undefined;
 }
 
 // GET /api/study/due — Get due cards (with filters)
@@ -133,10 +259,19 @@ router.get('/due', (req, res) => {
 
     const { topic, set, tags, slotMin, slotMax, mode, limit, order, ids, dailyNewLimit, globalNewLimit, sessionSize } = req.query;
     const requestedNewLimit = safeInt(limit, 10, 1, 1000);
-    const dailyCap = dailyNewLimit !== undefined ? safeInt(dailyNewLimit, 0, 0, 1000) : null;
+
+    // Use settings as defaults when query params aren't provided
+    const settingsDailyLimit = getSettingNum('daily_new_limit', 8);
+    const settingsPerTopicLimit = getSettingNum('cards_per_topic_limit', 2);
+
+    const dailyCap = dailyNewLimit !== undefined
+      ? safeInt(dailyNewLimit, 0, 0, 1000)
+      : settingsPerTopicLimit;
     // Hard ceiling across ALL topics combined (e.g. 8/day). Per-topic cap
     // (dailyCap) still applies within this global ceiling.
-    const globalCap = globalNewLimit !== undefined ? safeInt(globalNewLimit, 0, 0, 1000) : null;
+    const globalCap = globalNewLimit !== undefined
+      ? safeInt(globalNewLimit, 0, 0, 1000)
+      : settingsDailyLimit;
 
     // ids=a,b,c — fetch specific cards by id regardless of SR state.
     // Used by "Study Again" to re-drill cards just answered wrong. Wrong
@@ -152,7 +287,7 @@ router.get('/due', (req, res) => {
       );
       const byId = new Map(rows.map((r: any) => [r.id, r]));
       const ordered = idList.map((id) => byId.get(id)).filter(Boolean);
-      return res.json(ordered.map((c: any) => getFullCard(c.id)).filter(Boolean));
+      return res.json(expandReversible(ordered.map((c: any) => getFullCard(c.id)).filter(Boolean)));
     }
 
     // Global ceiling: how many new cards across ALL topics remain today.
@@ -187,7 +322,7 @@ router.get('/due', (req, res) => {
         globalBudgetLeft -= rows.length;
       }
       const fullCards = allNewCards.map((c: any) => getFullCard(c.id)).filter(Boolean);
-      return res.json(fullCards);
+      return res.json(expandReversible(fullCards));
     }
 
     // Single-topic budget: min of per-topic remaining and global remaining
@@ -226,7 +361,7 @@ router.get('/due', (req, res) => {
           return tagList.some((t) => cardTags.includes(t));
         });
       }
-      return res.json(cramFull);
+      return res.json(expandReversible(cramFull));
     }
 
     // ── Smart mode: auto-balanced session (overdue → due today → new) ──
@@ -297,7 +432,7 @@ router.get('/due', (req, res) => {
           return tagList.some((t) => cardTags.includes(t));
         });
       }
-      return res.json(smartFull);
+      return res.json(expandReversible(smartFull));
     }
 
     let sql = `
@@ -361,7 +496,11 @@ router.get('/due', (req, res) => {
       fullCards = [...reviewCards, ...newCards];
     }
 
-    res.json(fullCards);
+    // Apply intelligent interleaving: space apart same-set cards and
+    // alternate difficulty levels so the user doesn't see 3 hard cards in a row
+    fullCards = interleaveCards(fullCards);
+
+    res.json(expandReversible(fullCards));
   } catch (err) {
     console.error('Error fetching due cards:', err);
     res.status(500).json({ error: 'Failed to fetch due cards' });
@@ -399,7 +538,7 @@ router.get('/pipeline', (req, res) => {
 
     const cards = queryAll(sql, params);
     const fullCards = cards.map((c: any) => getFullCard(c.id)).filter(Boolean);
-    res.json(fullCards);
+    res.json(expandReversible(fullCards));
   } catch (err) {
     console.error('Error fetching pipeline:', err);
     res.status(500).json({ error: 'Failed to fetch pipeline' });
@@ -620,12 +759,19 @@ router.post('/review', (req, res) => {
       });
     }
 
+    // Compute retention-based interval multiplier for the target slot range
+    const intervalMultiplier = getRetentionMultiplier(
+      Math.max(card.sr_slot - 1, MIN_SLOT),
+      Math.min(card.sr_slot + 1, MAX_SLOT),
+    );
+
     const reviewResult = processReview(
       result,
       card.sr_slot,
       card.sr_next_due_at,
       card.sr_ease_factor ?? 2.5,
       response_time_ms,
+      intervalMultiplier,
     );
 
     // Always log the review
@@ -634,6 +780,11 @@ router.post('/review', (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [genId(), cardId, result, slotBefore, reviewResult.newSlot, reviewResult.nextDueAt, reviewResult.reviewType, response_time_ms]
     );
+
+    // Lapse tracking: increment lapse count when wrong at slot 5+
+    if (reviewResult.lapsed) {
+      run(`UPDATE cards SET sr_lapse_count = COALESCE(sr_lapse_count, 0) + 1 WHERE id = ?`, [cardId]);
+    }
 
     // Update card SR state
     if (reviewResult.scheduleLocked) {
@@ -836,6 +987,103 @@ router.get('/forecast', (_req, res) => {
   } catch (err) {
     console.error('Error fetching forecast:', err);
     res.status(500).json({ error: 'Failed to fetch forecast' });
+  }
+});
+
+// GET /api/study/forecast-30d — 30-day workload prediction with new-card estimation
+router.get('/forecast-30d', (_req, res) => {
+  try {
+    // Estimate daily new-card rate from the last 14 days of review_log
+    const newRateRow = queryOne(
+      `SELECT COUNT(*) as total,
+              COUNT(DISTINCT date(reviewed_at)) as days
+       FROM review_log
+       WHERE slot_before = 0 AND slot_after > 0
+         AND reviewed_at >= date('now', '-14 days')`,
+      []
+    );
+    const activeDays = Math.max(1, newRateRow?.days || 1);
+    const dailyNewRate = Math.round((newRateRow?.total || 0) / activeDays);
+
+    const forecast: { date: string; dueCount: number; estimatedNew: number }[] = [];
+    for (let i = 0; i < 30; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      const isoDay = d.toISOString().slice(0, 10);
+
+      let dueCount: number;
+      if (i === 0) {
+        const row = queryOne(
+          `SELECT COUNT(*) as count FROM cards
+           WHERE sr_is_active = 1 AND sr_slot > 0
+             AND sr_next_due_at IS NOT NULL
+             AND datetime(sr_next_due_at) <= datetime('now')`,
+          []
+        );
+        dueCount = row?.count || 0;
+      } else {
+        const dayStart = `datetime('now', '+${i} days', 'start of day')`;
+        const dayEnd = `datetime('now', '+${i + 1} days', 'start of day')`;
+        const row = queryOne(
+          `SELECT COUNT(*) as count FROM cards
+           WHERE sr_is_active = 1
+             AND datetime(sr_next_due_at) >= ${dayStart}
+             AND datetime(sr_next_due_at) < ${dayEnd}`,
+          []
+        );
+        dueCount = row?.count || 0;
+      }
+
+      forecast.push({
+        date: isoDay,
+        dueCount,
+        estimatedNew: i === 0 ? 0 : dailyNewRate,
+      });
+    }
+
+    res.json(forecast);
+  } catch (err) {
+    console.error('Error fetching 30-day forecast:', err);
+    res.status(500).json({ error: 'Failed to fetch 30-day forecast' });
+  }
+});
+
+// GET /api/study/duration — Study duration distribution from review_log
+router.get('/duration', (_req, res) => {
+  try {
+    const buckets = [
+      { label: '<3s', min: 0, max: 3000 },
+      { label: '3-5s', min: 3000, max: 5000 },
+      { label: '5-10s', min: 5000, max: 10000 },
+      { label: '10-20s', min: 10000, max: 20000 },
+      { label: '20-60s', min: 20000, max: 60000 },
+      { label: '>60s', min: 60000, max: 3600000 },
+    ];
+
+    const result = buckets.map((b) => {
+      const row = queryOne(
+        `SELECT COUNT(*) as count FROM review_log
+         WHERE response_time_ms IS NOT NULL
+           AND response_time_ms >= ? AND response_time_ms < ?`,
+        [b.min, b.max]
+      );
+      return { label: b.label, count: row?.count || 0 };
+    });
+
+    const avgRow = queryOne(
+      `SELECT AVG(response_time_ms) as avg_ms, COUNT(*) as total
+       FROM review_log WHERE response_time_ms IS NOT NULL`,
+      []
+    );
+
+    res.json({
+      buckets: result,
+      averageMs: avgRow?.avg_ms ? Math.round(avgRow.avg_ms) : null,
+      totalReviews: avgRow?.total || 0,
+    });
+  } catch (err) {
+    console.error('Error fetching duration:', err);
+    res.status(500).json({ error: 'Failed to fetch duration data' });
   }
 });
 
@@ -1265,6 +1513,41 @@ router.get('/efficiency', (_req, res) => {
   } catch (err) {
     console.error('Error fetching efficiency:', err);
     res.status(500).json({ error: 'Failed to fetch efficiency data' });
+  }
+});
+
+// GET /api/study/leeches — Cards with lapse_count >= 3 (cards the user keeps forgetting)
+router.get('/leeches', (req, res) => {
+  try {
+    const { topic } = req.query;
+    let sql = `
+      SELECT c.*, cs.name as set_name, cs.topic_id
+      FROM cards c
+      JOIN card_sets cs ON cs.id = c.card_set_id
+      WHERE c.sr_is_active = 1
+        AND COALESCE(c.sr_lapse_count, 0) >= 3
+    `;
+    const params: any[] = [];
+    if (topic) {
+      sql += ' AND cs.topic_id = ?';
+      params.push(topic);
+    }
+    sql += ' ORDER BY c.sr_lapse_count DESC, c.sr_slot ASC';
+
+    const cards = queryAll(sql, params);
+    const fullCards = cards.map((c: any) => {
+      const full = getFullCard(c.id);
+      if (full) {
+        (full as any).set_name = c.set_name;
+        (full as any).topic_id = c.topic_id;
+      }
+      return full;
+    }).filter(Boolean);
+
+    res.json(fullCards);
+  } catch (err) {
+    console.error('Error fetching leeches:', err);
+    res.status(500).json({ error: 'Failed to fetch leech cards' });
   }
 });
 
