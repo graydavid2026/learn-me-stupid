@@ -125,6 +125,7 @@ export function calculateCascadeRegression(currentSlot: number, nextDueAt: strin
 
   let slot = currentSlot;
   let dueMs = new Date(nextDueAt).getTime();
+  if (isNaN(dueMs)) return MIN_SLOT;
   const now = Date.now();
 
   while (slot > MIN_SLOT) {

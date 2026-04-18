@@ -36,10 +36,14 @@ jobs:
       - name: Verify deployment
         run: |
           sleep 15
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://learn-me-stupid.blueflower-168a08ac.westus2.azurecontainerapps.io/api/health)
+          FQDN=$(az containerapp show \
+            --name learn-me-stupid \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${FQDN}/api/health")
           if [ "$STATUS" -eq 200 ]; then
-            echo "Deployment verified - health check returned 200"
+            echo "Deployment verified - health check returned 200 at https://${FQDN}/api/health"
           else
-            echo "Health check returned $STATUS"
+            echo "Health check returned $STATUS at https://${FQDN}/api/health"
             exit 1
           fi

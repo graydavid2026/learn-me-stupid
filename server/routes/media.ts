@@ -70,11 +70,12 @@ router.post('/upload', upload.single('file'), (req, res) => {
       'SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM media_blocks WHERE card_side_id = ?',
       [cardSideId]
     );
+    const nextOrder = maxOrder?.next ?? 0;
 
     run(
       `INSERT INTO media_blocks (id, card_side_id, block_type, sort_order, file_path, file_name, file_size, mime_type)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [blockId, cardSideId, blockType, maxOrder.next, req.file.filename, req.file.originalname, req.file.size, req.file.mimetype]
+      [blockId, cardSideId, blockType, nextOrder, req.file.filename, req.file.originalname, req.file.size, req.file.mimetype]
     );
 
     const block = queryOne('SELECT * FROM media_blocks WHERE id = ?', [blockId]);
@@ -92,9 +93,10 @@ router.delete('/:id', (req, res) => {
     const block = queryOne('SELECT * FROM media_blocks WHERE id = ?', [id]);
     if (!block) return res.status(404).json({ error: 'Media block not found' });
 
-    // Delete file if it exists
+    // Delete file if it exists (use basename to prevent path traversal)
     if (block.file_path) {
-      const filePath = path.join(UPLOADS_DIR, block.file_path);
+      const safeName = path.basename(block.file_path);
+      const filePath = path.join(UPLOADS_DIR, safeName);
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }

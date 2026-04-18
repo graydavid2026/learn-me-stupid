@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { queryAll, queryOne, run } from '../db/index.js';
+import { queryAll, queryOne, run, getDb } from '../db/index.js';
 import { v4 as uuid } from 'uuid';
 
 const router = Router();
@@ -148,40 +148,51 @@ router.put('/cards/:id', (req, res) => {
       run('UPDATE cards SET updated_at = datetime(\'now\') WHERE id = ?', [id]);
     }
 
-    // Update front side media blocks
-    if (front?.media_blocks) {
-      const frontSide = queryOne('SELECT * FROM card_sides WHERE card_id = ? AND side = 0', [id]);
-      if (frontSide) {
-        // Delete existing blocks
-        run('DELETE FROM media_blocks WHERE card_side_id = ?', [frontSide.id]);
-        // Insert new blocks
-        for (let i = 0; i < front.media_blocks.length; i++) {
-          const block = front.media_blocks[i];
-          const blockId = block.id && block.id.length > 0 ? block.id : genId();
-          run(
-            `INSERT INTO media_blocks (id, card_side_id, block_type, sort_order, text_content, file_path, file_name, file_size, mime_type, youtube_url, youtube_embed_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [blockId, frontSide.id, block.block_type, i, block.text_content || null, block.file_path || null, block.file_name || null, block.file_size || null, block.mime_type || null, block.youtube_url || null, block.youtube_embed_id || null]
-          );
-        }
-      }
-    }
+    // Update media blocks within a transaction to prevent partial writes
+    const d = getDb();
+    try {
+      d.exec('BEGIN TRANSACTION');
 
-    // Update back side media blocks
-    if (back?.media_blocks) {
-      const backSide = queryOne('SELECT * FROM card_sides WHERE card_id = ? AND side = 1', [id]);
-      if (backSide) {
-        run('DELETE FROM media_blocks WHERE card_side_id = ?', [backSide.id]);
-        for (let i = 0; i < back.media_blocks.length; i++) {
-          const block = back.media_blocks[i];
-          const blockId = block.id && block.id.length > 0 ? block.id : genId();
-          run(
-            `INSERT INTO media_blocks (id, card_side_id, block_type, sort_order, text_content, file_path, file_name, file_size, mime_type, youtube_url, youtube_embed_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [blockId, backSide.id, block.block_type, i, block.text_content || null, block.file_path || null, block.file_name || null, block.file_size || null, block.mime_type || null, block.youtube_url || null, block.youtube_embed_id || null]
-          );
+      // Update front side media blocks
+      if (front?.media_blocks) {
+        const frontSide = queryOne('SELECT * FROM card_sides WHERE card_id = ? AND side = 0', [id]);
+        if (frontSide) {
+          // Delete existing blocks
+          run('DELETE FROM media_blocks WHERE card_side_id = ?', [frontSide.id]);
+          // Insert new blocks
+          for (let i = 0; i < front.media_blocks.length; i++) {
+            const block = front.media_blocks[i];
+            const blockId = block.id && block.id.length > 0 ? block.id : genId();
+            run(
+              `INSERT INTO media_blocks (id, card_side_id, block_type, sort_order, text_content, file_path, file_name, file_size, mime_type, youtube_url, youtube_embed_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [blockId, frontSide.id, block.block_type, i, block.text_content || null, block.file_path || null, block.file_name || null, block.file_size || null, block.mime_type || null, block.youtube_url || null, block.youtube_embed_id || null]
+            );
+          }
         }
       }
+
+      // Update back side media blocks
+      if (back?.media_blocks) {
+        const backSide = queryOne('SELECT * FROM card_sides WHERE card_id = ? AND side = 1', [id]);
+        if (backSide) {
+          run('DELETE FROM media_blocks WHERE card_side_id = ?', [backSide.id]);
+          for (let i = 0; i < back.media_blocks.length; i++) {
+            const block = back.media_blocks[i];
+            const blockId = block.id && block.id.length > 0 ? block.id : genId();
+            run(
+              `INSERT INTO media_blocks (id, card_side_id, block_type, sort_order, text_content, file_path, file_name, file_size, mime_type, youtube_url, youtube_embed_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [blockId, backSide.id, block.block_type, i, block.text_content || null, block.file_path || null, block.file_name || null, block.file_size || null, block.mime_type || null, block.youtube_url || null, block.youtube_embed_id || null]
+            );
+          }
+        }
+      }
+
+      d.exec('COMMIT');
+    } catch (txErr) {
+      d.exec('ROLLBACK');
+      throw txErr;
     }
 
     const fullCard = getFullCard(id);

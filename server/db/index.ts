@@ -1,5 +1,6 @@
 import initSqlJs, { Database } from 'sql.js';
 import fs from 'fs';
+import { writeFile } from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -11,6 +12,8 @@ const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'mnemonic.db');
 
 let db: Database | null = null;
 let initPromise: Promise<Database> | null = null;
+let dirty = false;
+let saveInterval: ReturnType<typeof setInterval> | null = null;
 
 export async function initDb(): Promise<Database> {
   if (db) return db;
@@ -27,6 +30,17 @@ export async function initDb(): Promise<Database> {
     }
 
     db.run('PRAGMA foreign_keys = ON');
+
+    // Start the debounced save interval (every 2 seconds)
+    saveInterval = setInterval(() => {
+      if (dirty) {
+        dirty = false;
+        persistAsync();
+      }
+    }, 2000);
+    // Don't let the interval keep the process alive
+    if (saveInterval.unref) saveInterval.unref();
+
     return db;
   })();
 
@@ -38,12 +52,46 @@ export function getDb(): Database {
   return db;
 }
 
-export function saveDb(): void {
-  if (!db) return;
-  const data = db.export();
-  const buffer = Buffer.from(data);
-  fs.writeFileSync(DB_PATH, buffer);
+function markDirty(): void {
+  dirty = true;
 }
+
+function persistAsync(): void {
+  if (!db) return;
+  try {
+    const data = db.export();
+    const buffer = Buffer.from(data);
+    writeFile(DB_PATH, buffer).catch((err) => {
+      console.error('Failed to persist database:', err);
+    });
+  } catch (err) {
+    console.error('Failed to export database for save:', err);
+  }
+}
+
+/** Synchronous flush for graceful shutdown — writes any pending changes immediately. */
+export function flushDb(): void {
+  if (saveInterval) {
+    clearInterval(saveInterval);
+    saveInterval = null;
+  }
+  if (!db || !dirty) return;
+  dirty = false;
+  try {
+    const data = db.export();
+    const buffer = Buffer.from(data);
+    fs.writeFileSync(DB_PATH, buffer);
+  } catch (err) {
+    console.error('Failed to flush database on shutdown:', err);
+  }
+}
+
+// Graceful shutdown hooks
+process.on('beforeExit', flushDb);
+process.on('SIGTERM', () => {
+  flushDb();
+  process.exit(0);
+});
 
 // Helper: run a query and return rows as objects
 export function queryAll(sql: string, params: any[] = []): any[] {
@@ -69,12 +117,12 @@ export function queryOne(sql: string, params: any[] = []): any | null {
 export function run(sql: string, params: any[] = []): void {
   const d = getDb();
   d.run(sql, params);
-  saveDb();
+  markDirty();
 }
 
 // Helper: run multiple statements (for migrations)
 export function exec(sql: string): void {
   const d = getDb();
   d.exec(sql);
-  saveDb();
+  markDirty();
 }

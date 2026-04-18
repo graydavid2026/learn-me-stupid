@@ -114,6 +114,10 @@ interface AppState {
   updateCardSet: (id: string, data: { name?: string; description?: string }) => Promise<void>;
   deleteCardSet: (id: string) => Promise<void>;
 
+  // Error feedback
+  fetchError: string | null;
+  clearError: () => void;
+
   // Card actions
   fetchCards: (setId: string) => Promise<void>;
   createCard: (setId: string, data: { tags?: string[]; front: { media_blocks: Partial<MediaBlock>[] }; back: { media_blocks: Partial<MediaBlock>[] } }) => Promise<CardFull | null>;
@@ -138,6 +142,8 @@ export const useStore = create<AppState>((set, get) => ({
   loadingCards: false,
   editingCard: null,
   showCardEditor: false,
+  fetchError: null,
+  clearError: () => set({ fetchError: null }),
 
   ttsEnabled: (() => {
     try { return localStorage.getItem('lms.ttsEnabled') === '1'; } catch { return false; }
@@ -206,7 +212,7 @@ export const useStore = create<AppState>((set, get) => ({
       set({ topics, loadingTopics: false });
     } catch (err) {
       console.error('Failed to fetch topics:', err);
-      set({ loadingTopics: false });
+      set({ loadingTopics: false, fetchError: 'Failed to load topics. Please check your connection and try again.' });
     }
   },
 
@@ -225,6 +231,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (res.ok) await get().fetchTopics();
     } catch (err) {
       console.error('Failed to create topic:', err);
+      set({ fetchError: 'Failed to create topic. Please try again.' });
     }
   },
 
@@ -238,6 +245,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (res.ok) await get().fetchTopics();
     } catch (err) {
       console.error('Failed to update topic:', err);
+      set({ fetchError: 'Failed to update topic. Please try again.' });
     }
   },
 
@@ -251,6 +259,7 @@ export const useStore = create<AppState>((set, get) => ({
       }
     } catch (err) {
       console.error('Failed to delete topic:', err);
+      set({ fetchError: 'Failed to delete topic. Please try again.' });
     }
   },
 
@@ -262,7 +271,7 @@ export const useStore = create<AppState>((set, get) => ({
       set({ cardSets, loadingSets: false });
     } catch (err) {
       console.error('Failed to fetch sets:', err);
-      set({ loadingSets: false });
+      set({ loadingSets: false, fetchError: 'Failed to load card sets. Please try again.' });
     }
   },
 
@@ -276,6 +285,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (res.ok) await get().fetchCardSets(topicId);
     } catch (err) {
       console.error('Failed to create set:', err);
+      set({ fetchError: 'Failed to create card set. Please try again.' });
     }
   },
 
@@ -292,6 +302,7 @@ export const useStore = create<AppState>((set, get) => ({
       }
     } catch (err) {
       console.error('Failed to update set:', err);
+      set({ fetchError: 'Failed to update card set. Please try again.' });
     }
   },
 
@@ -304,6 +315,7 @@ export const useStore = create<AppState>((set, get) => ({
       }
     } catch (err) {
       console.error('Failed to delete set:', err);
+      set({ fetchError: 'Failed to delete card set. Please try again.' });
     }
   },
 
@@ -315,7 +327,7 @@ export const useStore = create<AppState>((set, get) => ({
       set({ cards, loadingCards: false });
     } catch (err) {
       console.error('Failed to fetch cards:', err);
-      set({ loadingCards: false });
+      set({ loadingCards: false, fetchError: 'Failed to load cards. Please try again.' });
     }
   },
 
@@ -338,6 +350,7 @@ export const useStore = create<AppState>((set, get) => ({
       return null;
     } catch (err) {
       console.error('Failed to create card:', err);
+      set({ fetchError: 'Failed to create card. Please try again.' });
       return null;
     }
   },
@@ -356,6 +369,7 @@ export const useStore = create<AppState>((set, get) => ({
       }
     } catch (err) {
       console.error('Failed to update card:', err);
+      set({ fetchError: 'Failed to update card. Please try again.' });
     }
   },
 
@@ -371,6 +385,7 @@ export const useStore = create<AppState>((set, get) => ({
       }
     } catch (err) {
       console.error('Failed to delete card:', err);
+      set({ fetchError: 'Failed to delete card. Please try again.' });
     }
   },
 

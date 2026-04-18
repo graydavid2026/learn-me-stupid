@@ -458,8 +458,10 @@ export function StudyView() {
   // slot 1 and it no longer matches mode=new).
   const [wrongCardIds, setWrongCardIds] = useState<string[]>([]);
   const [filterSetId, setFilterSetId] = useState<string>(urlSetId || '');
+  const [grading, setGrading] = useState(false);
   const startTime = useRef<number>(0);
   const autoStarted = useRef(false);
+  const restartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flippedRef = useRef(flipped);
   const handleGradeRef = useRef<(r: 'correct' | 'wrong') => void>(() => {});
   useEffect(() => { flippedRef.current = flipped; }, [flipped]);
@@ -546,7 +548,6 @@ export function StudyView() {
     recog.interimResults = false;
     recog.lang = 'en-US';
     let stopped = false;
-    let restartTimer: ReturnType<typeof setTimeout> | null = null;
 
     const safeStart = () => {
       if (stopped) return;
@@ -591,14 +592,17 @@ export function StudyView() {
       // Android Chrome auto-stops after ~1s of silence — restart with a small
       // debounce so we don't hit the spec rate limit.
       if (stopped) return;
-      if (restartTimer) clearTimeout(restartTimer);
-      restartTimer = setTimeout(safeStart, 250);
+      if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
+      restartTimeoutRef.current = setTimeout(safeStart, 250);
     };
 
     safeStart();
     return () => {
       stopped = true;
-      if (restartTimer) clearTimeout(restartTimer);
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+        restartTimeoutRef.current = null;
+      }
       try { recog.stop(); } catch {}
       try { recog.abort(); } catch {}
     };
@@ -693,74 +697,81 @@ export function StudyView() {
   };
 
   const handleGrade = useCallback(async (result: 'correct' | 'wrong') => {
-    const card = queue[currentIndex];
+    if (grading) return;
+    const idx = currentIndex;
+    const card = queue[idx];
     if (!card) return;
 
+    setGrading(true);
     const responseTime = Date.now() - startTime.current;
 
-    // "Ahead of schedule" is a sandbox — never persists. No /review call,
-    // no SR slot change, no review_log row, no daily new-card budget impact.
-    if (mode === 'pipeline') {
-      setStats((prev) => ({
-        ...prev,
-        reviewed: prev.reviewed + 1,
-        correct: prev.correct + (result === 'correct' ? 1 : 0),
-        wrong: prev.wrong + (result === 'wrong' ? 1 : 0),
-      }));
-      if (currentIndex + 1 >= queue.length) {
-        setSessionComplete(true);
-      } else {
-        setCurrentIndex(currentIndex + 1);
-        setFlipped(false);
-        startTime.current = Date.now();
-      }
-      return;
-    }
-
     try {
-      const res = await fetch('/api/study/review', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cardId: card.id, result, response_time_ms: responseTime }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (result === 'wrong') {
-          setWrongCardIds((prev) => (prev.includes(card.id) ? prev : [...prev, card.id]));
-        } else {
-          // Got it right on a re-drill — remove from the wrong list.
-          setWrongCardIds((prev) => prev.filter((id) => id !== card.id));
-        }
+      // "Ahead of schedule" is a sandbox — never persists. No /review call,
+      // no SR slot change, no review_log row, no daily new-card budget impact.
+      if (mode === 'pipeline') {
         setStats((prev) => ({
           ...prev,
           reviewed: prev.reviewed + 1,
           correct: prev.correct + (result === 'correct' ? 1 : 0),
           wrong: prev.wrong + (result === 'wrong' ? 1 : 0),
-          slotChanges: data.slotBefore !== data.slotAfter
-            ? [...prev.slotChanges, { cardId: card.id, from: data.slotBefore, to: data.slotAfter }]
-            : prev.slotChanges,
         }));
-
-        // Update card in queue with new data
-        const updatedQueue = [...queue];
-        updatedQueue[currentIndex] = data.card;
-        setQueue(updatedQueue);
+        if (idx + 1 >= queue.length) {
+          setSessionComplete(true);
+        } else {
+          setCurrentIndex(idx + 1);
+          setFlipped(false);
+          startTime.current = Date.now();
+        }
+        return;
       }
-    } catch (err) {
-      console.error('Review failed:', err);
-    }
 
-    // Move to next card
-    if (currentIndex + 1 >= queue.length) {
-      setSessionComplete(true);
-      fetchTopics(); // refresh counts
-    } else {
-      setCurrentIndex(currentIndex + 1);
-      setFlipped(false);
-      startTime.current = Date.now();
+      try {
+        const res = await fetch('/api/study/review', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cardId: card.id, result, response_time_ms: responseTime }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (result === 'wrong') {
+            setWrongCardIds((prev) => (prev.includes(card.id) ? prev : [...prev, card.id]));
+          } else {
+            // Got it right on a re-drill — remove from the wrong list.
+            setWrongCardIds((prev) => prev.filter((id) => id !== card.id));
+          }
+          setStats((prev) => ({
+            ...prev,
+            reviewed: prev.reviewed + 1,
+            correct: prev.correct + (result === 'correct' ? 1 : 0),
+            wrong: prev.wrong + (result === 'wrong' ? 1 : 0),
+            slotChanges: data.slotBefore !== data.slotAfter
+              ? [...prev.slotChanges, { cardId: card.id, from: data.slotBefore, to: data.slotAfter }]
+              : prev.slotChanges,
+          }));
+
+          // Update card in queue with new data
+          const updatedQueue = [...queue];
+          updatedQueue[idx] = data.card;
+          setQueue(updatedQueue);
+        }
+      } catch (err) {
+        console.error('Review failed:', err);
+      }
+
+      // Move to next card
+      if (idx + 1 >= queue.length) {
+        setSessionComplete(true);
+        fetchTopics(); // refresh counts
+      } else {
+        setCurrentIndex(idx + 1);
+        setFlipped(false);
+        startTime.current = Date.now();
+      }
+    } finally {
+      setGrading(false);
     }
-  }, [currentIndex, queue, fetchTopics, mode]);
+  }, [currentIndex, queue, fetchTopics, mode, grading]);
 
   useEffect(() => { handleGradeRef.current = handleGrade; }, [handleGrade]);
 
@@ -1064,14 +1075,16 @@ export function StudyView() {
                 <div className="flex gap-3">
                   <button
                     onClick={(e) => { e.stopPropagation(); handleGrade('wrong'); }}
-                    className="flex-1 bg-red-600/20 hover:bg-red-600/30 active:bg-red-600/40 text-red-400 border border-red-600/30 px-4 py-4 sm:py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 active:scale-[0.98]"
+                    disabled={grading}
+                    className={`flex-1 bg-red-600/20 hover:bg-red-600/30 active:bg-red-600/40 text-red-400 border border-red-600/30 px-4 py-4 sm:py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 active:scale-[0.98] ${grading ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <X className="w-5 h-5" />
                     Wrong
                   </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); handleGrade('correct'); }}
-                    className="flex-1 bg-green-600/20 hover:bg-green-600/30 active:bg-green-600/40 text-green-400 border border-green-600/30 px-4 py-4 sm:py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 active:scale-[0.98]"
+                    disabled={grading}
+                    className={`flex-1 bg-green-600/20 hover:bg-green-600/30 active:bg-green-600/40 text-green-400 border border-green-600/30 px-4 py-4 sm:py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 active:scale-[0.98] ${grading ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <Check className="w-5 h-5" />
                     Correct

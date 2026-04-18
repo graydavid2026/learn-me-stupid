@@ -14,15 +14,32 @@ import {
 
 const router = Router();
 
+function safeInt(val: unknown, fallback: number, min = 0, max = 1000): number {
+  const n = Number(val);
+  return Number.isFinite(n) ? Math.max(min, Math.min(max, Math.floor(n))) : fallback;
+}
+
 function genId(): string {
   return uuid().replace(/-/g, '').slice(0, 16);
 }
 
-// Rolling 12-hour window cutoff as a SQLite-friendly UTC datetime string.
-// New-card budget resets 12 hours after the last batch, not at midnight.
-function rollingCutoffUtc(): string {
-  const cutoff = new Date(Date.now() - 12 * 60 * 60 * 1000);
-  return cutoff.toISOString().replace('T', ' ').slice(0, 19);
+const INDIANA_TZ = 'America/Indiana/Indianapolis';
+
+// Start-of-day cutoff in Indiana timezone as a SQLite-friendly UTC datetime
+// string. New-card budget resets at midnight Indiana time, not on a rolling
+// 12-hour window, so the daily cap is consistent regardless of study time.
+function indianaDayCutoffUtc(): string {
+  // Get today's date string in Indiana timezone (YYYY-MM-DD)
+  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: INDIANA_TZ });
+  // Build a Date representing midnight Indiana time on that date,
+  // then convert back to a real UTC timestamp.
+  const midnightIndiana = new Date(`${todayStr}T00:00:00`);
+  // Get the offset: difference between UTC and Indiana "wall clock"
+  const utcNow = new Date();
+  const indianaWall = new Date(utcNow.toLocaleString('en-US', { timeZone: INDIANA_TZ }));
+  const offsetMs = utcNow.getTime() - indianaWall.getTime();
+  const cutoffUtc = new Date(midnightIndiana.getTime() + offsetMs);
+  return cutoffUtc.toISOString().replace('T', ' ').slice(0, 19);
 }
 
 // How many slot-0 cards have been promoted past slot 0 in the last 12 hours.
@@ -31,7 +48,7 @@ function rollingCutoffUtc(): string {
 // budget is per-topic, not global, so studying English doesn't starve
 // Russian (or any other topic).
 function newCardsLearnedToday(topicId?: string): number {
-  const cutoff = rollingCutoffUtc();
+  const cutoff = indianaDayCutoffUtc();
   if (topicId) {
     const row = queryOne(
       `SELECT COUNT(*) as count FROM review_log rl
@@ -92,11 +109,11 @@ function getFullCard(cardId: string) {
 router.get('/due', (req, res) => {
   try {
     const { topic, set, tags, slotMin, slotMax, mode, limit, order, ids, dailyNewLimit, globalNewLimit } = req.query;
-    const requestedNewLimit = Number(limit) || 10;
-    const dailyCap = dailyNewLimit !== undefined ? Math.max(0, Number(dailyNewLimit)) : null;
+    const requestedNewLimit = safeInt(limit, 10, 1, 1000);
+    const dailyCap = dailyNewLimit !== undefined ? safeInt(dailyNewLimit, 0, 0, 1000) : null;
     // Hard ceiling across ALL topics combined (e.g. 8/day). Per-topic cap
     // (dailyCap) still applies within this global ceiling.
-    const globalCap = globalNewLimit !== undefined ? Math.max(0, Number(globalNewLimit)) : null;
+    const globalCap = globalNewLimit !== undefined ? safeInt(globalNewLimit, 0, 0, 1000) : null;
 
     // ids=a,b,c — fetch specific cards by id regardless of SR state.
     // Used by "Study Again" to re-drill cards just answered wrong. Wrong
@@ -185,11 +202,11 @@ router.get('/due', (req, res) => {
     }
     if (slotMin !== undefined) {
       sql += ' AND c.sr_slot >= ?';
-      params.push(Number(slotMin));
+      params.push(safeInt(slotMin, 0, 0, MAX_SLOT));
     }
     if (slotMax !== undefined) {
       sql += ' AND c.sr_slot <= ?';
-      params.push(Number(slotMax));
+      params.push(safeInt(slotMax, MAX_SLOT, 0, MAX_SLOT));
     }
 
     if (mode === 'new') {
@@ -318,9 +335,12 @@ router.get('/stats', (req, res) => {
       []
     );
     let streak = 0;
-    const today = new Date();
+    // Use Indiana timezone for day boundaries so streaks align with the
+    // user's local calendar, not the server's UTC or local time.
+    const todayIndStr = new Date().toLocaleDateString('en-CA', { timeZone: INDIANA_TZ });
+    const todayInd = new Date(todayIndStr + 'T00:00:00');
     for (let i = 0; i < recentDays.length; i++) {
-      const expected = new Date(today);
+      const expected = new Date(todayInd);
       expected.setDate(expected.getDate() - i);
       const expectedStr = expected.toISOString().slice(0, 10);
       if (recentDays[i]?.day === expectedStr) {
@@ -350,7 +370,7 @@ router.get('/stats', (req, res) => {
 // GET /api/study/history — Daily review counts for charts
 router.get('/history', (req, res) => {
   try {
-    const days = Math.min(Number(req.query.days) || 30, 365);
+    const days = safeInt(req.query.days, 30, 1, 365);
     const rows = queryAll(
       `SELECT date(reviewed_at) as day,
               COUNT(*) as total,
@@ -440,11 +460,17 @@ router.get('/timeline', (req, res) => {
 // POST /api/study/review — Submit a review
 router.post('/review', (req, res) => {
   try {
-    const { cardId, result, response_time_ms } = req.body;
+    const { cardId, result, response_time_ms: rawResponseTime } = req.body;
 
     if (!cardId || !['correct', 'wrong'].includes(result)) {
       return res.status(400).json({ error: 'cardId and result (correct/wrong) required' });
     }
+
+    // Validate response_time_ms: must be a finite number >= 0 and < 1 hour
+    const response_time_ms = (() => {
+      const n = Number(rawResponseTime);
+      return Number.isFinite(n) && n >= 0 && n < 3600000 ? Math.floor(n) : null;
+    })();
 
     const card = queryOne('SELECT * FROM cards WHERE id = ?', [cardId]);
     if (!card) return res.status(404).json({ error: 'Card not found' });
@@ -461,7 +487,7 @@ router.post('/review', (req, res) => {
     run(
       `INSERT INTO review_log (id, card_id, result, slot_before, slot_after, next_due_at, review_type, response_time_ms)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [genId(), cardId, result, slotBefore, reviewResult.newSlot, reviewResult.nextDueAt, reviewResult.reviewType, response_time_ms || null]
+      [genId(), cardId, result, slotBefore, reviewResult.newSlot, reviewResult.nextDueAt, reviewResult.reviewType, response_time_ms]
     );
 
     // Update card SR state
