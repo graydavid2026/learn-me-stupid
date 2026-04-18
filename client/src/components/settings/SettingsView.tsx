@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Volume2, Mic, Settings as SettingsIcon, AlertTriangle, Sparkles, Copy, Check, Shuffle, GraduationCap, Download, Upload, Database } from 'lucide-react';
+import { Volume2, Mic, Settings as SettingsIcon, AlertTriangle, Sparkles, Copy, Check, Shuffle, GraduationCap, Download, Upload, Database, BookOpen, ChevronDown } from 'lucide-react';
 import { useStore } from '../../stores/useStore';
 
 const SR_SUPPORTED =
@@ -411,6 +411,57 @@ export function SettingsView() {
           )}
         </div>
       </div>
+
+      {/* How Spaced Repetition Works */}
+      <CollapsibleSection
+        icon={<BookOpen className="w-5 h-5 shrink-0 text-accent" />}
+        title="How Spaced Repetition Works"
+      >
+        <div className="text-sm text-text-secondary leading-relaxed space-y-3">
+          <p>
+            Your brain forgets things on a predictable curve — the Ebbinghaus forgetting curve.
+            Without review, you lose ~75% of new information within 48 hours.
+          </p>
+          <p>
+            Spaced repetition fights this by scheduling reviews right before you'd forget.
+            Each successful review doubles the interval. After 5-6 correct reviews,
+            a card moves to long-term memory (months between reviews).
+          </p>
+          <div>
+            <p className="font-semibold text-text-primary mb-1.5">How this app works:</p>
+            <ul className="space-y-1 text-xs text-text-secondary list-disc list-inside">
+              <li><span className="text-text-primary font-medium">New cards:</span> tested twice in your first session, then scheduled for tomorrow</li>
+              <li><span className="text-text-primary font-medium">Each correct answer:</span> interval grows (1d → 3d → 1w → 2w → 1mo → ...)</li>
+              <li><span className="text-text-primary font-medium">Wrong answers:</span> interval shrinks, card gets more practice</li>
+              <li><span className="text-text-primary font-medium">Ease factor:</span> cards you struggle with get shorter intervals automatically</li>
+              <li><span className="text-text-primary font-medium">Daily limits:</span> prevents overwhelm (2 new cards per topic, 8 total)</li>
+            </ul>
+          </div>
+          <p className="text-xs text-text-tertiary italic border-t border-border pt-2">
+            The key is consistency. One session per day, every day, beats
+            cramming for hours once a week.
+          </p>
+        </div>
+      </CollapsibleSection>
+    </div>
+  );
+}
+
+function CollapsibleSection({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="card p-5 mb-4">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-3"
+      >
+        {icon}
+        <div className="flex-1 min-w-0 text-left">
+          <div className="text-base font-medium text-text-primary">{title}</div>
+        </div>
+        <ChevronDown className={`w-4 h-4 text-text-tertiary transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && <div className="mt-4 pt-3 border-t border-border">{children}</div>}
     </div>
   );
 }

@@ -1,13 +1,14 @@
 import { ReactNode, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { BookOpen, GraduationCap, LayoutGrid, Brain, BarChart3, Settings } from 'lucide-react';
+import { BookOpen, GraduationCap, LayoutGrid, Brain, BarChart3, Settings, Landmark } from 'lucide-react';
 import { useStore } from '../../stores/useStore';
 import { TopicDropdown } from './TopicDropdown';
 
 const navItems = [
   { to: '/study', label: 'Study', icon: GraduationCap },
   { to: '/cards', label: 'Cards', icon: LayoutGrid },
-  { to: '/deep-dive', label: 'Deep Dive', icon: Brain },
+  { to: '/deep-dive', label: 'Mind Map', icon: Brain },
+  { to: '/palace', label: 'Palace', icon: Landmark },
   { to: '/stats', label: 'Stats', icon: BarChart3 },
   { to: '/settings', label: 'Settings', icon: Settings },
 ];

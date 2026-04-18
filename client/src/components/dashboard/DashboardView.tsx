@@ -414,6 +414,208 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   );
 };
 
+// ─── Analytics Types ────────────────────────────────────────────────────────
+
+interface RetentionRow {
+  sr_slot: number;
+  total_reviews: number;
+  correct: number;
+  retention_pct: number;
+}
+
+interface VelocityRow {
+  week: string;
+  promotions: number;
+}
+
+interface EfficiencyData {
+  responseTime: { result: string; avg_ms: number; count: number }[];
+  perDay: { day: string; total: number; correct: number }[];
+  accuracyTrend: { day: string; total: number; correct: number; accuracy_pct: number }[];
+}
+
+// ─── Retention by Slot Chart ────────────────────────────────────────────────
+
+function RetentionBySlot({ data }: { data: RetentionRow[] }) {
+  if (data.length === 0) return null;
+
+  return (
+    <div className="card p-4 sm:p-5">
+      <div className="flex items-center gap-2 mb-4">
+        <Target className="w-4 h-4 text-accent" />
+        <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Retention by Slot</h3>
+      </div>
+      <div className="space-y-1.5">
+        {data.map((row) => {
+          const pct = row.retention_pct ?? 0;
+          const color = pct > 85 ? '#3d9a6e' : pct >= 70 ? '#c9943b' : '#c75a5a';
+          const label = SLOT_LABELS[row.sr_slot] ?? `S${row.sr_slot}`;
+          return (
+            <div key={row.sr_slot} className="flex items-center gap-2">
+              <span className="text-[11px] font-mono text-text-secondary w-8 text-right shrink-0">{label}</span>
+              <div className="flex-1 h-4 bg-surface-base rounded overflow-hidden relative" style={{ maxWidth: 280 }}>
+                <div
+                  className="h-full rounded transition-all"
+                  style={{ width: `${pct}%`, backgroundColor: color }}
+                />
+              </div>
+              <span className="text-[11px] font-mono w-12 text-right shrink-0" style={{ color }}>
+                {pct}%
+              </span>
+              <span className="text-[10px] text-text-tertiary w-10 text-right shrink-0">
+                n={row.total_reviews}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Learning Velocity Chart ────────────────────────────────────────────────
+
+function LearningVelocity({ data }: { data: VelocityRow[] }) {
+  if (data.length === 0) return null;
+  const maxVal = Math.max(1, ...data.map((d) => d.promotions));
+  const barH = 100;
+
+  // Determine trend
+  const recent = data.slice(-3);
+  const earlier = data.slice(0, Math.max(1, data.length - 3));
+  const recentAvg = recent.reduce((s, d) => s + d.promotions, 0) / (recent.length || 1);
+  const earlierAvg = earlier.reduce((s, d) => s + d.promotions, 0) / (earlier.length || 1);
+  const trend = recentAvg > earlierAvg * 1.1 ? 'Accelerating' : recentAvg < earlierAvg * 0.9 ? 'Decelerating' : 'Steady';
+  const trendColor = trend === 'Accelerating' ? '#3d9a6e' : trend === 'Decelerating' ? '#c75a5a' : '#c9943b';
+
+  return (
+    <div className="card p-4 sm:p-5">
+      <div className="flex items-center gap-2 mb-1">
+        <ArrowUpRight className="w-4 h-4 text-accent" />
+        <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Learning Velocity</h3>
+      </div>
+      <p className="text-[10px] text-text-tertiary mb-3">
+        Cards promoted to long-term (slot 6+) per week
+        <span className="ml-2 font-mono font-bold" style={{ color: trendColor }}>{trend}</span>
+      </p>
+      <div className="flex items-end gap-1.5 sm:gap-2" style={{ height: barH }}>
+        {data.map((d) => {
+          const h = d.promotions > 0 ? Math.max(6, (d.promotions / maxVal) * barH) : 3;
+          return (
+            <div key={d.week} className="flex-1 flex flex-col items-center gap-1">
+              <span className="text-[10px] font-mono text-text-secondary">{d.promotions || ''}</span>
+              <div
+                className="w-full rounded-t transition-all"
+                style={{
+                  height: h,
+                  backgroundColor: d.promotions > 0 ? '#5b8a9a' : '#1a1d27',
+                  minHeight: d.promotions > 0 ? 6 : 2,
+                }}
+              />
+              <span className="text-[9px] text-text-tertiary truncate w-full text-center">
+                {d.week.replace(/^\d{4}-/, '')}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Accuracy Trend Sparkline ───────────────────────────────────────────────
+
+function AccuracySparkline({ data }: { data: EfficiencyData }) {
+  const { accuracyTrend, responseTime } = data;
+
+  // Compute 7-day rolling average from the last 30 days
+  const last30 = accuracyTrend.slice(-30);
+  if (last30.length === 0) return null;
+
+  const rolling: { day: string; pct: number; rolling: number }[] = [];
+  for (let i = 0; i < last30.length; i++) {
+    const windowStart = Math.max(0, i - 6);
+    const window = last30.slice(windowStart, i + 1);
+    const totalCorrect = window.reduce((s, d) => s + d.correct, 0);
+    const totalAll = window.reduce((s, d) => s + d.total, 0);
+    const rollingPct = totalAll > 0 ? (totalCorrect / totalAll) * 100 : 0;
+    rolling.push({ day: last30[i].day, pct: last30[i].accuracy_pct, rolling: Math.round(rollingPct * 10) / 10 });
+  }
+
+  const overallAvg = last30.length > 0
+    ? Math.round(last30.reduce((s, d) => s + d.accuracy_pct, 0) / last30.length * 10) / 10
+    : 0;
+  const currentAccuracy = rolling.length > 0 ? rolling[rolling.length - 1].rolling : 0;
+
+  // SVG sparkline
+  const svgW = 300;
+  const svgH = 60;
+  const minY = Math.min(...rolling.map((d) => d.rolling));
+  const maxY = Math.max(...rolling.map((d) => d.rolling));
+  const range = Math.max(1, maxY - minY);
+  const padY = range * 0.1;
+
+  const points = rolling.map((d, i) => {
+    const x = rolling.length > 1 ? (i / (rolling.length - 1)) * svgW : svgW / 2;
+    const y = svgH - ((d.rolling - minY + padY) / (range + 2 * padY)) * svgH;
+    return `${x},${y}`;
+  });
+  const pathD = points.length > 0 ? `M${points.join(' L')}` : '';
+
+  // Response time stats
+  const correctTime = responseTime.find((r) => r.result === 'correct');
+  const wrongTime = responseTime.find((r) => r.result === 'wrong');
+
+  return (
+    <div className="card p-4 sm:p-5">
+      <div className="flex items-center gap-2 mb-1">
+        <TrendingUp className="w-4 h-4 text-accent" />
+        <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Accuracy Trend</h3>
+      </div>
+      <div className="flex items-center gap-4 mb-3">
+        <div>
+          <span className="text-[10px] text-text-tertiary">Current (7d avg)</span>
+          <p className="text-lg font-bold font-mono" style={{
+            color: currentAccuracy > 85 ? '#3d9a6e' : currentAccuracy >= 70 ? '#c9943b' : '#c75a5a',
+          }}>
+            {currentAccuracy}%
+          </p>
+        </div>
+        <div>
+          <span className="text-[10px] text-text-tertiary">30d avg</span>
+          <p className="text-sm font-mono text-text-secondary">{overallAvg}%</p>
+        </div>
+        {correctTime && (
+          <div>
+            <span className="text-[10px] text-text-tertiary">Correct avg</span>
+            <p className="text-sm font-mono text-success">{(correctTime.avg_ms / 1000).toFixed(1)}s</p>
+          </div>
+        )}
+        {wrongTime && (
+          <div>
+            <span className="text-[10px] text-text-tertiary">Wrong avg</span>
+            <p className="text-sm font-mono text-error">{(wrongTime.avg_ms / 1000).toFixed(1)}s</p>
+          </div>
+        )}
+      </div>
+      <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full" style={{ height: svgH }} preserveAspectRatio="none">
+        {/* Average line */}
+        {(() => {
+          const avgY = svgH - ((overallAvg - minY + padY) / (range + 2 * padY)) * svgH;
+          return (
+            <line x1="0" y1={avgY} x2={svgW} y2={avgY} stroke="#6b7280" strokeWidth="0.5" strokeDasharray="4 2" />
+          );
+        })()}
+        <path d={pathD} fill="none" stroke="#d4a853" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      <div className="flex justify-between text-[9px] text-text-tertiary mt-1">
+        <span>{rolling[0]?.day.slice(5)}</span>
+        <span>{rolling[rolling.length - 1]?.day.slice(5)}</span>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Dashboard ──────────────────────────────────────────────────────────
 
 export function DashboardView() {
@@ -425,6 +627,9 @@ export function DashboardView() {
   const [forecast, setForecast] = useState<{ topics: TopicForecast[]; weekForecast: WeekDay[] } | null>(null);
   const [calendar, setCalendar] = useState<{ upcoming: CalendarEntry[]; history: HistoryEntry[] } | null>(null);
   const [topicSR, setTopicSR] = useState<any>(null);
+  const [retention, setRetention] = useState<RetentionRow[]>([]);
+  const [velocity, setVelocity] = useState<VelocityRow[]>([]);
+  const [efficiency, setEfficiency] = useState<EfficiencyData | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Load data
@@ -461,8 +666,11 @@ export function DashboardView() {
           setTopicSR(null);
         }
 
-        // Calendar loads in background (non-critical)
+        // Calendar + analytics load in background (non-critical)
         fetch('/api/study/calendar?days=60').then(r => r.json()).then(setCalendar).catch(() => {});
+        fetch('/api/study/retention').then(r => r.json()).then(setRetention).catch(() => {});
+        fetch('/api/study/velocity').then(r => r.json()).then(setVelocity).catch(() => {});
+        fetch('/api/study/efficiency').then(r => r.json()).then(setEfficiency).catch(() => {});
       } catch (err) {
         console.error('Failed to load dashboard:', err);
       } finally {
@@ -551,8 +759,8 @@ export function DashboardView() {
         <DailyGoalCard reviewed={stats.reviewsToday} goal={dailyGoal} onGoalChange={handleGoalChange} />
         <StreakDisplay streak={stats.streak} bestStreak={bestStreak} />
         <StatCard icon={Clock} label="Due Now" value={stats.dueToday} color={stats.dueToday > 0 ? '#c9943b' : '#3d9a6e'} tooltip="due-today" onClick={stats.dueToday > 0 ? goStudy : undefined} urgent={stats.dueToday > 10} />
-        <StatCard icon={BarChart3} label="Accuracy" value={fmt.pct(accuracy)} color={HEAT_COLORS[getAccuracyHeat(accuracy)]} tooltip="accuracy" />
-        <StatCard icon={Target} label="Mastered" value={stats.mastered} color="#3d9a6e" tooltip="mastered" />
+        <StatCard icon={BarChart3} label="Accuracy" value={`${fmt.pct(accuracy)} (${stats.reviewsToday} reviews)`} color={HEAT_COLORS[getAccuracyHeat(accuracy)]} tooltip="accuracy" />
+        <StatCard icon={Target} label="Mastered" value={stats.mastered} color="#3d9a6e" tooltip="mastered-slot10" />
         <StatCard icon={BookOpen} label="Total Cards" value={stats.total} color="#e4e4e7" />
       </div>
 
@@ -741,6 +949,22 @@ export function DashboardView() {
                   );
                 })}
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Advanced Analytics */}
+      {(retention.length > 0 || velocity.length > 0 || efficiency) && (
+        <div className="mb-4 sm:mb-6">
+          <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-3">Advanced Analytics</h3>
+          <div className="grid sm:grid-cols-2 gap-3 sm:gap-4">
+            {retention.length > 0 && <RetentionBySlot data={retention} />}
+            {velocity.length > 0 && <LearningVelocity data={velocity} />}
+          </div>
+          {efficiency && (
+            <div className="mt-3 sm:mt-4">
+              <AccuracySparkline data={efficiency} />
             </div>
           )}
         </div>

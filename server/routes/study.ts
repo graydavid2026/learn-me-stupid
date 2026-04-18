@@ -131,7 +131,7 @@ router.get('/due', (req, res) => {
       }
     }
 
-    const { topic, set, tags, slotMin, slotMax, mode, limit, order, ids, dailyNewLimit, globalNewLimit } = req.query;
+    const { topic, set, tags, slotMin, slotMax, mode, limit, order, ids, dailyNewLimit, globalNewLimit, sessionSize } = req.query;
     const requestedNewLimit = safeInt(limit, 10, 1, 1000);
     const dailyCap = dailyNewLimit !== undefined ? safeInt(dailyNewLimit, 0, 0, 1000) : null;
     // Hard ceiling across ALL topics combined (e.g. 8/day). Per-topic cap
@@ -198,6 +198,106 @@ router.get('/due', (req, res) => {
       newCardLimit = Math.min(requestedNewLimit, remaining, globalRemaining);
     } else if (globalCap !== null) {
       newCardLimit = Math.min(requestedNewLimit, globalRemaining);
+    }
+
+    // ── Cram mode: ALL cards regardless of due date, worst-performing first ──
+    if (mode === 'cram') {
+      let cramSql = `
+        SELECT c.* FROM cards c
+        JOIN card_sets cs ON cs.id = c.card_set_id
+        WHERE c.sr_is_active = 1
+      `;
+      const cramParams: any[] = [];
+      if (topic) { cramSql += ' AND cs.topic_id = ?'; cramParams.push(topic); }
+      if (set) { cramSql += ' AND c.card_set_id = ?'; cramParams.push(set); }
+      // Order: worst accuracy first (cards with reviews but low correct ratio),
+      // then by slot ASC so weaker cards surface first.
+      cramSql += ` ORDER BY
+        CASE WHEN c.sr_total_reviews > 0
+             THEN CAST(c.sr_total_correct AS REAL) / c.sr_total_reviews
+             ELSE 0.5 END ASC,
+        c.sr_slot ASC`;
+      const cramCards = queryAll(cramSql, cramParams);
+      let cramFull = cramCards.map((c: any) => getFullCard(c.id)).filter(Boolean);
+      if (tags) {
+        const tagList = (tags as string).split(',').map((t) => t.trim().toLowerCase());
+        cramFull = cramFull.filter((c: any) => {
+          const cardTags: string[] = JSON.parse(c.tags || '[]').map((t: string) => t.toLowerCase());
+          return tagList.some((t) => cardTags.includes(t));
+        });
+      }
+      return res.json(cramFull);
+    }
+
+    // ── Smart mode: auto-balanced session (overdue → due today → new) ──
+    if (mode === 'smart') {
+      const targetSize = safeInt(sessionSize, 20, 1, 200);
+      const smartParams: any[] = [];
+      let topicClause = '';
+      if (topic) { topicClause = ' AND cs.topic_id = ?'; smartParams.push(topic); }
+
+      // 1. Overdue cards (past grace deadline), oldest first
+      const overdue = queryAll(
+        `SELECT c.* FROM cards c
+           JOIN card_sets cs ON cs.id = c.card_set_id
+          WHERE c.sr_is_active = 1
+            AND c.sr_slot > 0
+            AND c.sr_grace_deadline IS NOT NULL
+            AND datetime(c.sr_grace_deadline) <= datetime('now')
+            ${topicClause}
+          ORDER BY c.sr_next_due_at ASC`,
+        smartParams
+      );
+
+      // 2. Due-today cards (due but not yet past grace), oldest first
+      const dueToday = queryAll(
+        `SELECT c.* FROM cards c
+           JOIN card_sets cs ON cs.id = c.card_set_id
+          WHERE c.sr_is_active = 1
+            AND c.sr_slot > 0
+            AND c.sr_next_due_at IS NOT NULL
+            AND datetime(c.sr_next_due_at) <= datetime('now')
+            AND (c.sr_grace_deadline IS NULL OR datetime(c.sr_grace_deadline) > datetime('now'))
+            ${topicClause}
+          ORDER BY c.sr_next_due_at ASC`,
+        smartParams
+      );
+
+      // 3. New cards up to daily limit
+      const newParams: any[] = [];
+      if (topic) newParams.push(topic);
+      const smartNewCards = queryAll(
+        `SELECT c.* FROM cards c
+           JOIN card_sets cs ON cs.id = c.card_set_id
+          WHERE c.sr_is_active = 1 AND c.sr_slot = 0
+            ${topicClause}
+          ORDER BY c.created_at ASC
+          LIMIT ?`,
+        [...newParams, newCardLimit]
+      );
+
+      // Combine: overdue first, then due, then new — all capped at targetSize
+      const combined: any[] = [];
+      const seenIds = new Set<string>();
+      for (const pool of [overdue, dueToday, smartNewCards]) {
+        for (const card of pool) {
+          if (combined.length >= targetSize) break;
+          if (!seenIds.has(card.id)) {
+            seenIds.add(card.id);
+            combined.push(card);
+          }
+        }
+      }
+
+      let smartFull = combined.map((c: any) => getFullCard(c.id)).filter(Boolean);
+      if (tags) {
+        const tagList = (tags as string).split(',').map((t) => t.trim().toLowerCase());
+        smartFull = smartFull.filter((c: any) => {
+          const cardTags: string[] = JSON.parse(c.tags || '[]').map((t: string) => t.toLowerCase());
+          return tagList.some((t) => cardTags.includes(t));
+        });
+      }
+      return res.json(smartFull);
     }
 
     let sql = `
@@ -483,7 +583,7 @@ router.get('/timeline', (req, res) => {
 // POST /api/study/review — Submit a review
 router.post('/review', (req, res) => {
   try {
-    const { cardId, result, response_time_ms: rawResponseTime } = req.body;
+    const { cardId, result, response_time_ms: rawResponseTime, review_type: clientReviewType } = req.body;
 
     if (!cardId || !['correct', 'wrong'].includes(result)) {
       return res.status(400).json({ error: 'cardId and result (correct/wrong) required' });
@@ -499,6 +599,26 @@ router.post('/review', (req, res) => {
     if (!card) return res.status(404).json({ error: 'Card not found' });
 
     const slotBefore = card.sr_slot;
+    const isCramReview = clientReviewType === 'cram';
+
+    if (isCramReview) {
+      // Cram review — log it but do NOT update SR schedule (sandbox mode)
+      run(
+        `INSERT INTO review_log (id, card_id, result, slot_before, slot_after, next_due_at, review_type, response_time_ms)
+         VALUES (?, ?, ?, ?, ?, ?, 'cram', ?)`,
+        [genId(), cardId, result, slotBefore, slotBefore, card.sr_next_due_at, response_time_ms]
+      );
+
+      const updatedCard = getFullCard(cardId);
+      return res.json({
+        card: updatedCard,
+        slotBefore,
+        slotAfter: slotBefore,
+        scheduleLocked: true,
+        reviewType: 'cram',
+        easeAfter: card.sr_ease_factor ?? 2.5,
+      });
+    }
 
     const reviewResult = processReview(
       result,
@@ -1057,6 +1177,94 @@ router.get('/tranche-dashboard', (req, res) => {
   } catch (err) {
     console.error('Error fetching tranche dashboard:', err);
     res.status(500).json({ error: 'Failed to fetch tranche dashboard' });
+  }
+});
+
+// GET /api/study/retention — Retention rate by SR slot
+router.get('/retention', (_req, res) => {
+  try {
+    const rows = queryAll(
+      `SELECT slot_before as sr_slot,
+        COUNT(*) as total_reviews,
+        SUM(CASE WHEN result = 'correct' THEN 1 ELSE 0 END) as correct,
+        ROUND(100.0 * SUM(CASE WHEN result = 'correct' THEN 1 ELSE 0 END) / COUNT(*), 1) as retention_pct
+       FROM review_log
+       WHERE review_type = 'standard'
+       GROUP BY slot_before
+       ORDER BY slot_before`,
+      []
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('Error fetching retention:', err);
+    res.status(500).json({ error: 'Failed to fetch retention data' });
+  }
+});
+
+// GET /api/study/velocity — Cards promoted past slot 6 per week (last 8 weeks)
+router.get('/velocity', (_req, res) => {
+  try {
+    const rows = queryAll(
+      `SELECT
+        strftime('%Y-W%W', reviewed_at) as week,
+        COUNT(*) as promotions
+       FROM review_log
+       WHERE slot_after >= 6 AND slot_before < 6
+         AND reviewed_at > datetime('now', '-56 days')
+       GROUP BY week
+       ORDER BY week`,
+      []
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('Error fetching velocity:', err);
+    res.status(500).json({ error: 'Failed to fetch velocity data' });
+  }
+});
+
+// GET /api/study/efficiency — Study efficiency stats
+router.get('/efficiency', (_req, res) => {
+  try {
+    // Average response time for correct vs wrong
+    const responseTime = queryAll(
+      `SELECT result,
+        ROUND(AVG(response_time_ms)) as avg_ms,
+        COUNT(*) as count
+       FROM review_log
+       WHERE response_time_ms IS NOT NULL
+       GROUP BY result`,
+      []
+    );
+
+    // Cards reviewed per session (grouped by date)
+    const perDay = queryAll(
+      `SELECT date(reviewed_at) as day,
+        COUNT(*) as total,
+        SUM(CASE WHEN result = 'correct' THEN 1 ELSE 0 END) as correct
+       FROM review_log
+       WHERE reviewed_at >= date('now', '-30 days')
+       GROUP BY date(reviewed_at)
+       ORDER BY day`,
+      []
+    );
+
+    // Daily accuracy for last 37 days (extra 7 for rolling window computation)
+    const accuracyTrend = queryAll(
+      `SELECT date(reviewed_at) as day,
+        COUNT(*) as total,
+        SUM(CASE WHEN result = 'correct' THEN 1 ELSE 0 END) as correct,
+        ROUND(100.0 * SUM(CASE WHEN result = 'correct' THEN 1 ELSE 0 END) / COUNT(*), 1) as accuracy_pct
+       FROM review_log
+       WHERE reviewed_at >= date('now', '-37 days')
+       GROUP BY date(reviewed_at)
+       ORDER BY day`,
+      []
+    );
+
+    res.json({ responseTime, perDay, accuracyTrend });
+  } catch (err) {
+    console.error('Error fetching efficiency:', err);
+    res.status(500).json({ error: 'Failed to fetch efficiency data' });
   }
 });
 

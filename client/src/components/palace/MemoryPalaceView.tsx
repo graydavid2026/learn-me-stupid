@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Home, Plus, Eye, Edit3, X, ChevronLeft, ChevronRight,
-  Play, Sparkles, ArrowLeft, Brain, Lightbulb, ChevronDown,
+  Play, Sparkles, ArrowLeft, Brain, Lightbulb, ChevronDown, HelpCircle,
 } from 'lucide-react';
 import { RoomView } from './RoomRenderer';
 import {
@@ -19,6 +19,48 @@ function getCardText(card: CardFull, side: 'front' | 'back'): string {
   const s = side === 'front' ? card.front : card.back;
   const textBlock = s?.media_blocks?.find(b => b.block_type === 'text');
   return textBlock?.text_content?.trim() || '';
+}
+
+function PalaceHelpSection() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="bg-surface border border-border rounded-xl overflow-hidden mb-2">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-3 px-4 py-3 text-left"
+      >
+        <HelpCircle className="w-4 h-4 text-accent shrink-0" />
+        <span className="text-sm font-medium text-gray-300 flex-1">What is a Memory Palace?</span>
+        <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="px-4 pb-4 border-t border-border pt-3">
+          <div className="text-sm text-gray-400 leading-relaxed space-y-3">
+            <p>
+              The Memory Palace (Method of Loci) is a 2,500-year-old technique used by
+              memory champions. To use it:
+            </p>
+            <ol className="list-decimal list-inside space-y-1 text-gray-300 text-sm">
+              <li>Choose a familiar place (your home, office, or a route you walk)</li>
+              <li>Place each item you want to remember at a specific location</li>
+              <li>Make the images vivid, unusual, and exaggerated</li>
+              <li>To recall, mentally walk through the palace visiting each location</li>
+            </ol>
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <div className="bg-success/8 border border-success/20 rounded-lg px-3 py-2">
+                <p className="text-xs font-semibold text-success mb-1">Best for</p>
+                <p className="text-xs text-gray-400">Vocabulary, lists, sequences, facts</p>
+              </div>
+              <div className="bg-warning/8 border border-warning/20 rounded-lg px-3 py-2">
+                <p className="text-xs font-semibold text-warning mb-1">Less ideal for</p>
+                <p className="text-xs text-gray-400">Abstract concepts, mathematical formulas</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function PalaceSetup({ onGenerate, onDemo }: { onGenerate: (w: World) => void; onDemo: () => void }) {
@@ -92,6 +134,8 @@ function PalaceSetup({ onGenerate, onDemo }: { onGenerate: (w: World) => void; o
           spatial world you can mentally walk through.
         </p>
       </div>
+
+      <PalaceHelpSection />
 
       <div className="space-y-6">
         {/* ── Build from existing cards ── */}

@@ -4,6 +4,56 @@ import { writeFile } from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+export interface CardRow {
+  id: string;
+  card_set_id: string;
+  sort_order: number;
+  tags: string;
+  card_type: string;
+  sr_slot: number;
+  sr_last_reviewed_at: string | null;
+  sr_next_due_at: string | null;
+  sr_consecutive_correct: number;
+  sr_consecutive_wrong: number;
+  sr_total_reviews: number;
+  sr_total_correct: number;
+  sr_is_active: number;
+  sr_grace_deadline: string | null;
+  sr_ease_factor: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CardSideRow {
+  id: string;
+  card_id: string;
+  side: number;
+  created_at: string;
+}
+
+export interface MediaBlockRow {
+  id: string;
+  card_side_id: string;
+  block_type: string;
+  sort_order: number;
+  text_content: string | null;
+  file_path: string | null;
+  original_name: string | null;
+  mime_type: string | null;
+  annotation_data: string | null;
+}
+
+export interface ReviewLogRow {
+  id: string;
+  card_id: string;
+  reviewed_at: string;
+  result: string;
+  slot_before: number;
+  slot_after: number;
+  response_time_ms: number | null;
+  review_type: string;
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // DB path is overridable via env var so production can point at a mounted
 // Azure Files volume (e.g. /app/data/mnemonic.db) without the mount
@@ -94,22 +144,22 @@ process.on('SIGTERM', () => {
 });
 
 // Helper: run a query and return rows as objects
-export function queryAll(sql: string, params: any[] = []): any[] {
+export function queryAll<T = any>(sql: string, params: any[] = []): T[] {
   const d = getDb();
   const stmt = d.prepare(sql);
   if (params.length) stmt.bind(params);
 
-  const rows: any[] = [];
+  const rows: T[] = [];
   while (stmt.step()) {
-    rows.push(stmt.getAsObject());
+    rows.push(stmt.getAsObject() as T);
   }
   stmt.free();
   return rows;
 }
 
 // Helper: run a query and return first row as object or null
-export function queryOne(sql: string, params: any[] = []): any | null {
-  const rows = queryAll(sql, params);
+export function queryOne<T = any>(sql: string, params: any[] = []): T | null {
+  const rows = queryAll<T>(sql, params);
   return rows.length > 0 ? rows[0] : null;
 }
 

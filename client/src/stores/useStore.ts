@@ -132,6 +132,17 @@ interface AppState {
 
 const API = '/api';
 
+async function fetchWithTimeout(url: string, options?: RequestInit, timeoutMs = 10000): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(id);
+  }
+}
+
 export const useStore = create<AppState>((set, get) => ({
   topics: [],
   selectedTopicId: null,
@@ -208,7 +219,7 @@ export const useStore = create<AppState>((set, get) => ({
   fetchTopics: async () => {
     set({ loadingTopics: true });
     try {
-      const res = await fetch(`${API}/topics`);
+      const res = await fetchWithTimeout(`${API}/topics`);
       const topics = await res.json();
       set({ topics, loadingTopics: false });
     } catch (err) {
@@ -267,7 +278,7 @@ export const useStore = create<AppState>((set, get) => ({
   fetchCardSets: async (topicId) => {
     set({ loadingSets: true });
     try {
-      const res = await fetch(`${API}/topics/${topicId}/sets`);
+      const res = await fetchWithTimeout(`${API}/topics/${topicId}/sets`);
       const cardSets = await res.json();
       set({ cardSets, loadingSets: false });
     } catch (err) {
@@ -323,7 +334,7 @@ export const useStore = create<AppState>((set, get) => ({
   fetchCards: async (setId) => {
     set({ loadingCards: true });
     try {
-      const res = await fetch(`${API}/sets/${setId}/cards`);
+      const res = await fetchWithTimeout(`${API}/sets/${setId}/cards`);
       const cards = await res.json();
       set({ cards, loadingCards: false });
     } catch (err) {

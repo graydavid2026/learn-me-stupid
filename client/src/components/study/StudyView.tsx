@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { GraduationCap, RotateCcw, Check, X, ChevronRight, Play, Filter, Zap, Clock, Target, ArrowLeft, Mic, Maximize2, Lightbulb, MessageSquare, Link2, AlertTriangle, Send, Loader2, Flame, Plus } from 'lucide-react';
+import { AchievementToast, ACHIEVEMENTS, Achievement, getAchieved, markAchieved } from '../ui/AchievementToast';
 import { useStore, CardFull, MediaBlock, CardSideFull } from '../../stores/useStore';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ImageLightbox, HotspotImage, parseHotspotData } from './ImageViewer';
@@ -627,7 +628,7 @@ function QuickAddCard() {
   );
 }
 
-type StudyMode = 'review' | 'new' | 'mixed' | 'pipeline' | 'focus';
+type StudyMode = 'smart' | 'review' | 'new' | 'mixed' | 'pipeline' | 'cram' | 'focus';
 
 interface SessionStats {
   total: number;
@@ -650,7 +651,7 @@ export function StudyView() {
   const urlSetId = searchParams.get('set');
 
   // Session state
-  const [mode, setMode] = useState<StudyMode>(urlSetId ? 'focus' : 'review');
+  const [mode, setMode] = useState<StudyMode>(urlSetId ? 'focus' : 'smart');
   const [queue, setQueue] = useState<CardFull[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
@@ -824,9 +825,18 @@ export function StudyView() {
     };
   }, [voiceCmdEnabled, sessionActive, sessionComplete]);
 
+  const [decayMessage, setDecayMessage] = useState<string | null>(null);
+
   const runDecayCheck = async () => {
     try {
-      await fetch('/api/study/decay-check', { method: 'POST' });
+      const res = await fetch('/api/study/decay-check', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.regressed && data.regressed > 0) {
+          setDecayMessage(`${data.regressed} card${data.regressed !== 1 ? 's' : ''} regressed due to inactivity`);
+          setTimeout(() => setDecayMessage(null), 5000);
+        }
+      }
     } catch (err) {
       console.error('Decay check failed:', err);
     }
@@ -861,6 +871,14 @@ export function StudyView() {
       url = '/api/study/due?' + idParams.toString();
       // Clear other params since id-fetch ignores them server-side anyway.
       params.forEach((_v, k) => params.delete(k));
+    } else if (effectiveMode === 'cram') {
+      params.set('mode', 'cram');
+      url = '/api/study/due?';
+    } else if (effectiveMode === 'smart') {
+      params.set('mode', 'smart');
+      params.set('dailyNewLimit', String(dailyNewCardLimit));
+      params.set('globalNewLimit', String(globalNewCardLimit));
+      url = '/api/study/due?';
     } else if (effectiveMode === 'pipeline') {
       url = '/api/study/pipeline?limit=20&';
     } else if (effectiveMode === 'review') {
@@ -941,11 +959,17 @@ export function StudyView() {
         return;
       }
 
+      const isCram = mode === 'cram';
       try {
         const res = await fetch('/api/study/review', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cardId: card.id, result, response_time_ms: responseTime }),
+          body: JSON.stringify({
+            cardId: card.id,
+            result,
+            response_time_ms: responseTime,
+            ...(isCram ? { review_type: 'cram' } : {}),
+          }),
         });
 
         if (res.ok) {
@@ -969,6 +993,14 @@ export function StudyView() {
           // Update card in queue with new data
           const updatedQueue = [...queue];
           updatedQueue[idx] = data.card;
+
+          // Cram mode: re-insert wrong cards 5 positions later so user sees them again soon
+          if (isCram && result === 'wrong') {
+            const reinsertPos = Math.min(idx + 1 + 5, updatedQueue.length);
+            updatedQueue.splice(reinsertPos, 0, card);
+            setStats((prev) => ({ ...prev, total: prev.total + 1 }));
+          }
+
           setQueue(updatedQueue);
         }
       } catch (err) {
@@ -1030,15 +1062,20 @@ export function StudyView() {
   // Session complete data — hoisted to top level to satisfy rules of hooks
   const [completeStreak, setCompleteStreak] = useState(0);
   const [nextDueLabel, setNextDueLabel] = useState<string | null>(null);
+  const [achievementQueue, setAchievementQueue] = useState<Achievement[]>([]);
   useEffect(() => {
     if (!sessionComplete) return;
     (async () => {
       try {
         const params = selectedTopicId ? `?topic=${selectedTopicId}` : '';
         const res = await fetch(`/api/study/stats${params}`);
+        let streak = 0;
+        let totalReviews = 0;
         if (res.ok) {
           const data = await res.json();
-          setCompleteStreak(data.streak || 0);
+          streak = data.streak || 0;
+          totalReviews = data.totalReviews || 0;
+          setCompleteStreak(streak);
         }
         const dueRes = await fetch('/api/study/forecast');
         if (dueRes.ok) {
@@ -1051,6 +1088,34 @@ export function StudyView() {
           } else {
             setNextDueLabel('Come back tomorrow');
           }
+        }
+
+        // Check achievements after session
+        const newAchievements: Achievement[] = [];
+        const achieved = getAchieved();
+
+        if (!achieved.includes('first-steps') && markAchieved('first-steps')) {
+          newAchievements.push(ACHIEVEMENTS.find(a => a.id === 'first-steps')!);
+        }
+        if (!achieved.includes('perfect-session') && stats.reviewed >= 5 && stats.wrong === 0 && markAchieved('perfect-session')) {
+          newAchievements.push(ACHIEVEMENTS.find(a => a.id === 'perfect-session')!);
+        }
+        if (!achieved.includes('on-fire') && streak >= 7 && markAchieved('on-fire')) {
+          newAchievements.push(ACHIEVEMENTS.find(a => a.id === 'on-fire')!);
+        }
+        if (!achieved.includes('century') && totalReviews >= 100 && markAchieved('century')) {
+          newAchievements.push(ACHIEVEMENTS.find(a => a.id === 'century')!);
+        }
+        const highSlotCards = queue.filter(c => c.sr_slot >= 5).length;
+        if (!achieved.includes('half-way') && queue.length >= 2 && highSlotCards >= queue.length * 0.5 && markAchieved('half-way')) {
+          newAchievements.push(ACHIEVEMENTS.find(a => a.id === 'half-way')!);
+        }
+        if (!achieved.includes('scholar') && queue.some(c => c.sr_slot >= 10) && markAchieved('scholar')) {
+          newAchievements.push(ACHIEVEMENTS.find(a => a.id === 'scholar')!);
+        }
+
+        if (newAchievements.length > 0) {
+          setAchievementQueue(newAchievements);
         }
       } catch {}
     })();
@@ -1072,7 +1137,14 @@ export function StudyView() {
             : 'Tough session, but showing up is what matters. Those tricky cards will repeat soon.';
 
     return (
-      <div className="max-w-lg mx-auto text-center py-12">
+      <>
+        {achievementQueue.length > 0 && (
+          <AchievementToast
+            achievement={achievementQueue[0]}
+            onDismiss={() => setAchievementQueue(prev => prev.slice(1))}
+          />
+        )}
+        <div className="max-w-lg mx-auto text-center py-12">
         <div className="card p-8">
           <GraduationCap className="w-16 h-16 mx-auto mb-4 text-accent" />
           <h2 className="text-2xl font-heading font-bold text-text-primary mb-2">Session Complete!</h2>
@@ -1163,6 +1235,7 @@ export function StudyView() {
           </div>
         </div>
       </div>
+      </>
     );
   }
 
@@ -1220,6 +1293,10 @@ export function StudyView() {
       }
     } else if (mode === 'review') {
       emptyMsg = 'Nothing due to review right now. Come back later!';
+    } else if (mode === 'cram') {
+      emptyMsg = 'No cards found. Add some cards first!';
+    } else if (mode === 'smart') {
+      emptyMsg = 'Nothing to study right now — no overdue, due, or new cards available.';
     } else {
       emptyMsg = 'No cards matched this study mode.';
     }
@@ -1255,6 +1332,12 @@ export function StudyView() {
             <span className="text-xs sm:text-sm font-mono text-text-secondary">
               {currentIndex + 1}/{queue.length}
             </span>
+            {mode === 'cram' && (
+              <span className="text-[10px] font-semibold uppercase tracking-wider bg-warning/15 text-warning border border-warning/25 px-1.5 py-0.5 rounded">Cram</span>
+            )}
+            {mode === 'smart' && (
+              <span className="text-[10px] font-semibold uppercase tracking-wider bg-accent/15 text-accent border border-accent/25 px-1.5 py-0.5 rounded">Smart</span>
+            )}
           </div>
           <div className="flex items-center gap-2 sm:gap-4">
             <span className="text-xs sm:text-sm text-success font-mono">{stats.correct} ✓</span>
@@ -1283,7 +1366,7 @@ export function StudyView() {
           onClick={() => setFlipped(!flipped)}
         >
           <div
-            className="relative transition-transform duration-300 ease-in-out min-h-[500px]"
+            className="relative transition-transform duration-300 ease-in-out min-h-[350px] sm:min-h-[500px]"
             style={{
               transformStyle: 'preserve-3d',
               transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
@@ -1481,14 +1564,23 @@ export function StudyView() {
       {/* Quick Add Card */}
       <QuickAddCard />
 
+      {decayMessage && (
+        <div className="card border-warning/30 bg-warning/[0.05] p-3 mb-4 flex items-center gap-2 text-sm text-warning">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          {decayMessage}
+        </div>
+      )}
+
       <div className="border-t border-border/40 my-6" />
 
       {/* Mode Selection */}
       <div className="grid grid-cols-2 gap-3 mb-6">
         {[
+          { id: 'smart' as StudyMode, label: 'Smart Session', desc: 'Auto-balanced review + new cards', icon: Zap },
           { id: 'review' as StudyMode, label: 'Review Due', desc: 'Cards you\'ve studied that need review', icon: Clock },
           { id: 'new' as StudyMode, label: 'Learn New', desc: `Introduce up to ${dailyNewCardLimit} new cards`, icon: GraduationCap },
-          { id: 'pipeline' as StudyMode, label: 'Ahead of Schedule', desc: 'Practice upcoming cards (sandbox — no SR changes)', icon: Play },
+          { id: 'cram' as StudyMode, label: 'Cram', desc: 'All cards, weakest first — no SR changes', icon: Flame },
+          { id: 'pipeline' as StudyMode, label: 'Ahead of Schedule', desc: 'Practice upcoming cards (sandbox)', icon: Play },
         ].map(({ id, label, desc, icon: Icon }) => (
           <button
             key={id}

@@ -720,7 +720,7 @@ function getNextClozeNumber(text: string): number {
 }
 
 export function CardEditor() {
-  const { editingCard, showCardEditor, setShowCardEditor, createCard, updateCard, cardSets } = useStore();
+  const { editingCard, showCardEditor, setShowCardEditor, createCard, updateCard, cardSets, topics, selectedTopicId, cards } = useStore();
   const [frontBlocks, setFrontBlocks] = useState<EditableBlock[]>([]);
   const [backBlocks, setBackBlocks] = useState<EditableBlock[]>([]);
   const [tags, setTags] = useState<string[]>([]);
@@ -769,6 +769,26 @@ export function CardEditor() {
       setCardType('standard');
     }
   }, [editingCard, cardSets]);
+
+  // Ctrl+S / Cmd+S to save
+  useEffect(() => {
+    if (!showCardEditor) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (selectedSetId && !saving) handleSave();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showCardEditor, selectedSetId, saving, frontBlocks, backBlocks, tags, cardType]);
+
+  // Breadcrumb data
+  const topicName = topics.find((t) => t.id === selectedTopicId)?.name || 'All Topics';
+  const setName = cardSets.find((s) => s.id === (editingCard?.card_set_id || selectedSetId))?.name || '';
+  const cardPosition = editingCard
+    ? cards.findIndex((c) => c.id === editingCard.id) + 1
+    : cards.length + 1;
 
   const handleMakeCloze = () => {
     // Find the first text block textarea with a selection
@@ -905,16 +925,34 @@ export function CardEditor() {
     <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center sm:p-4">
       <div className="bg-surface rounded-t-2xl sm:rounded-modal border border-border w-full sm:max-w-3xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-border shrink-0">
-          <h2 className="text-lg font-heading font-semibold text-text-primary">
-            {editingCard ? 'Edit Card' : 'New Card'}
-          </h2>
-          <button
-            onClick={() => setShowCardEditor(false)}
-            className="p-1 text-text-secondary hover:text-text-primary transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+        <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border shrink-0">
+          {/* Breadcrumb */}
+          <div className="flex items-center gap-1.5 text-xs text-text-tertiary mb-1">
+            <span className="truncate max-w-[120px]">{topicName}</span>
+            {setName && (
+              <>
+                <span>/</span>
+                <span className="truncate max-w-[120px]">{setName}</span>
+              </>
+            )}
+            {cardPosition > 0 && (
+              <>
+                <span>/</span>
+                <span>Card {cardPosition}</span>
+              </>
+            )}
+          </div>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-heading font-semibold text-text-primary">
+              {editingCard ? 'Edit Card' : 'New Card'}
+            </h2>
+            <button
+              onClick={() => setShowCardEditor(false)}
+              className="p-1 text-text-secondary hover:text-text-primary transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Body */}

@@ -44,7 +44,7 @@ export function TopicDropdown() {
               className="w-2.5 h-2.5 rounded-full shrink-0"
               style={{ backgroundColor: selectedTopic.color }}
             />
-            <span className="text-sm font-medium text-gray-200 truncate">
+            <span className="text-sm font-medium text-gray-200 truncate max-w-[150px] sm:max-w-none">
               {selectedTopic.name}
             </span>
             {selectedTopic.due_count > 0 && (

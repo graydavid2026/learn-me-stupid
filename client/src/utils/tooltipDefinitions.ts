@@ -72,6 +72,10 @@ const defs: Record<string, TooltipDef> = {
     definition: 'Cards at Tier 7 or 8 — reviewed quarterly or less.',
     note: 'Mastered doesn\'t mean forgotten. These cards still get periodic reviews.',
   },
+  'mastered-slot10': {
+    definition: 'Cards at Slot 10+ (4-month+ intervals). These are deeply retained.',
+    note: 'Slot 10+ cards are considered mastered. They still get periodic reviews to prevent decay.',
+  },
   'decay': {
     definition: 'When a card isn\'t reviewed on time, its tier drops automatically.',
     formula: 'If overdue by 2× the interval, drop 1 tier. If 4×, drop 2 tiers.',
