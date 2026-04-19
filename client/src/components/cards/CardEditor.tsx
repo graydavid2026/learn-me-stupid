@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback, createRef } from 'react';
-import { X, Plus, GripVertical, Trash2, Type, Image, Music, Video, Youtube, Upload, ChevronDown, Clipboard, Mic, Square, VideoIcon, Camera, Pencil } from 'lucide-react';
-import { useStore, MediaBlock, CardFull } from '../../stores/useStore';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { X, Plus, GripVertical, Trash2, Type, Image, Music, Video, Youtube, Upload, ChevronDown, Mic, Square, VideoIcon, Camera, Pencil } from 'lucide-react';
+import { useStore } from '../../stores/useStore';
 import { ImageAnnotator } from '../ui/ImageAnnotator';
 
 type BlockType = 'text' | 'image' | 'audio' | 'video' | 'youtube';
@@ -733,30 +733,34 @@ export function CardEditor() {
   useEffect(() => {
     if (editingCard) {
       setFrontBlocks(
-        editingCard.front.media_blocks.map((b) => ({
-          id: b.id,
-          block_type: b.block_type,
-          text_content: b.text_content || '',
-          file_path: b.file_path,
-          file_name: b.file_name,
-          file_size: b.file_size,
-          mime_type: b.mime_type,
-          youtube_url: b.youtube_url || '',
-          youtube_embed_id: b.youtube_embed_id,
-        }))
+        editingCard.front.media_blocks
+          .filter((b): b is typeof b & { block_type: BlockType } => b.block_type !== 'hotspot')
+          .map((b) => ({
+            id: b.id,
+            block_type: b.block_type,
+            text_content: b.text_content || '',
+            file_path: b.file_path,
+            file_name: b.file_name,
+            file_size: b.file_size,
+            mime_type: b.mime_type,
+            youtube_url: b.youtube_url || '',
+            youtube_embed_id: b.youtube_embed_id,
+          }))
       );
       setBackBlocks(
-        editingCard.back.media_blocks.map((b) => ({
-          id: b.id,
-          block_type: b.block_type,
-          text_content: b.text_content || '',
-          file_path: b.file_path,
-          file_name: b.file_name,
-          file_size: b.file_size,
-          mime_type: b.mime_type,
-          youtube_url: b.youtube_url || '',
-          youtube_embed_id: b.youtube_embed_id,
-        }))
+        editingCard.back.media_blocks
+          .filter((b): b is typeof b & { block_type: BlockType } => b.block_type !== 'hotspot')
+          .map((b) => ({
+            id: b.id,
+            block_type: b.block_type,
+            text_content: b.text_content || '',
+            file_path: b.file_path,
+            file_name: b.file_name,
+            file_size: b.file_size,
+            mime_type: b.mime_type,
+            youtube_url: b.youtube_url || '',
+            youtube_embed_id: b.youtube_embed_id,
+          }))
       );
       setTags(JSON.parse(editingCard.tags || '[]'));
       setSelectedSetId(editingCard.card_set_id);

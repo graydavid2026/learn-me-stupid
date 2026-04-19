@@ -132,10 +132,10 @@ export function CardsView() {
             placeholder="Card set name..."
             className="flex-1 input"
           />
-          <button onClick={handleCreateSet} className="p-2 text-green-400 hover:text-green-300">
+          <button onClick={handleCreateSet} aria-label="Create card set" className="p-2 text-green-400 hover:text-green-300">
             <Check className="w-5 h-5" />
           </button>
-          <button onClick={() => { setCreatingSet(false); setNewSetName(''); }} className="p-2 text-gray-400 hover:text-gray-300">
+          <button onClick={() => { setCreatingSet(false); setNewSetName(''); }} aria-label="Cancel" className="p-2 text-gray-400 hover:text-gray-300">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -171,10 +171,10 @@ export function CardsView() {
                       }}
                       className="flex-1 input"
                     />
-                    <button onClick={() => handleUpdateSet(set.id)} className="p-1.5 text-green-400 hover:text-green-300">
+                    <button onClick={() => handleUpdateSet(set.id)} aria-label="Save name" className="p-1.5 text-green-400 hover:text-green-300">
                       <Check className="w-4 h-4" />
                     </button>
-                    <button onClick={() => setEditingId(null)} className="p-1.5 text-gray-400 hover:text-gray-300">
+                    <button onClick={() => setEditingId(null)} aria-label="Cancel edit" className="p-1.5 text-gray-400 hover:text-gray-300">
                       <X className="w-4 h-4" />
                     </button>
                   </div>

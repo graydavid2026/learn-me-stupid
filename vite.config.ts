@@ -20,5 +20,18 @@ export default defineConfig({
   },
   build: {
     outDir: '../dist/client',
+    // Split heavy deps into their own chunks so first-paint doesn't ship
+    // the analytics charts + mind-map libs if the user only opens the
+    // study view.
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          recharts: ['recharts'],
+          reactflow: ['reactflow'],
+          framer: ['framer-motion'],
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+        },
+      },
+    },
   },
 });

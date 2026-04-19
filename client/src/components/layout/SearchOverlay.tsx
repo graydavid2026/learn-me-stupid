@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, FileText, FolderOpen, BookOpen, X, Hash } from 'lucide-react';
+import { Search, FileText, FolderOpen, BookOpen } from 'lucide-react';
 import { useStore } from '../../stores/useStore';
 import { useNavigate } from 'react-router-dom';
 
@@ -132,7 +132,7 @@ export function SearchOverlay() {
               {results.topics.length > 0 && (
                 <div className="mb-2">
                   <p className="text-[10px] uppercase tracking-wider text-gray-600 px-2 py-1">Topics</p>
-                  {results.topics.map((t, i) => {
+                  {results.topics.map((t) => {
                     const idx = allItems.findIndex((item) => item.type === 'topic' && item.data.id === t.id);
                     return (
                       <button

@@ -514,7 +514,7 @@ export function ImageAnnotator({ imageSrc, onSave, onCancel }: Props) {
               Crop
             </button>
           )}
-          <button onClick={onCancel} className="p-1.5 text-gray-400 hover:text-gray-200">
+          <button onClick={onCancel} aria-label="Cancel" className="p-1.5 text-gray-400 hover:text-gray-200">
             <X className="w-5 h-5" />
           </button>
           <button onClick={handleSave} className="bg-accent text-white px-3 py-1 rounded-lg text-sm font-medium flex items-center gap-1">

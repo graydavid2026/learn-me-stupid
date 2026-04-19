@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Home, Plus, Eye, Edit3, X, ChevronLeft, ChevronRight,
@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { RoomView } from './RoomRenderer';
 import {
-  World, PalaceRoom, Locus, LOCUS_COLORS, THEMES,
+  World, Locus, LOCUS_COLORS, THEMES,
   generateWorld, createDemoWorld, matchTheme,
 } from './palaceEngine';
 import { useStore, CardFull } from '../../stores/useStore';
@@ -384,7 +384,7 @@ function LocusPanel({ locus, onClose, onUpdate }: {
               ))}
             </div>
             <span className="text-xs text-gray-500 font-mono">{tierLabels[locus.srTier]}</span>
-            <button onClick={onClose} className="p-1 text-gray-500 hover:text-white"><X className="w-4 h-4" /></button>
+            <button onClick={onClose} aria-label="Close" className="p-1 text-gray-500 hover:text-white"><X className="w-4 h-4" /></button>
           </div>
         </div>
 
@@ -463,13 +463,13 @@ function WalkthroughControls({ index, total, onPrev, onNext, onStop, label, room
       exit={{ opacity: 0, y: -10 }}
       className="absolute top-3 left-1/2 -translate-x-1/2 z-30 bg-surface border border-border rounded-xl shadow-xl px-4 py-2.5 flex items-center gap-4"
     >
-      <button onClick={onStop} className="text-gray-400 hover:text-white"><X className="w-4 h-4" /></button>
-      <button onClick={onPrev} disabled={index === 0} className="p-1 text-gray-400 hover:text-white disabled:opacity-30"><ChevronLeft className="w-5 h-5" /></button>
+      <button onClick={onStop} aria-label="Stop walkthrough" className="text-gray-400 hover:text-white"><X className="w-4 h-4" /></button>
+      <button onClick={onPrev} disabled={index === 0} aria-label="Previous stop" className="p-1 text-gray-400 hover:text-white disabled:opacity-30"><ChevronLeft className="w-5 h-5" /></button>
       <div className="text-center min-w-[140px]">
         <p className="text-white text-sm font-medium">{label}</p>
         <p className="text-gray-500 text-xs">{roomName} — stop {index + 1} of {total}</p>
       </div>
-      <button onClick={onNext} disabled={index === total - 1} className="p-1 text-gray-400 hover:text-white disabled:opacity-30"><ChevronRight className="w-5 h-5" /></button>
+      <button onClick={onNext} disabled={index === total - 1} aria-label="Next stop" className="p-1 text-gray-400 hover:text-white disabled:opacity-30"><ChevronRight className="w-5 h-5" /></button>
     </motion.div>
   );
 }
@@ -521,7 +521,7 @@ function AddLocusForm({ onAdd, onCancel, nextOrder, theme }: {
     >
       <div className="px-4 py-3 border-b border-border flex items-center justify-between">
         <h3 className="text-sm font-semibold text-white">Add Locus #{nextOrder}</h3>
-        <button onClick={onCancel} className="p-1 text-gray-500 hover:text-white"><X className="w-4 h-4" /></button>
+        <button onClick={onCancel} aria-label="Cancel" className="p-1 text-gray-500 hover:text-white"><X className="w-4 h-4" /></button>
       </div>
       <div className="p-4 space-y-3 max-h-[55vh] overflow-y-auto">
         <div>

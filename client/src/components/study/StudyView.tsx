@@ -47,6 +47,7 @@ export function StudyView() {
   const [wrongCardIds, setWrongCardIds] = useState<string[]>([]);
   const [filterSetId, setFilterSetId] = useState<string>(urlSetId || '');
   const [grading, setGrading] = useState(false);
+  const [gradeError, setGradeError] = useState<string | null>(null);
   // Typing mode state
   const [typingInput, setTypingInput] = useState('');
   const [typingResult, setTypingResult] = useState<'correct' | 'wrong' | null>(null);
@@ -321,6 +322,8 @@ export function StudyView() {
       }
 
       const isCram = mode === 'cram';
+      let succeeded = false;
+      let data: any = null;
       try {
         const res = await fetch('/api/study/review', {
           method: 'POST',
@@ -334,36 +337,46 @@ export function StudyView() {
         });
 
         if (res.ok) {
-          const data = await res.json();
-          if (result === 'wrong') {
-            setWrongCardIds((prev) => (prev.includes(card.id) ? prev : [...prev, card.id]));
-          } else {
-            setWrongCardIds((prev) => prev.filter((id) => id !== card.id));
-          }
-          setStats((prev) => ({
-            ...prev,
-            reviewed: prev.reviewed + 1,
-            correct: prev.correct + (result === 'correct' ? 1 : 0),
-            wrong: prev.wrong + (result === 'wrong' ? 1 : 0),
-            slotChanges: data.slotBefore !== data.slotAfter
-              ? [...prev.slotChanges, { cardId: card.id, from: data.slotBefore, to: data.slotAfter }]
-              : prev.slotChanges,
-          }));
-
-          const updatedQueue = [...queue];
-          updatedQueue[idx] = data.card;
-
-          if (isCram && result === 'wrong') {
-            const reinsertPos = Math.min(idx + 1 + 5, updatedQueue.length);
-            updatedQueue.splice(reinsertPos, 0, card);
-            setStats((prev) => ({ ...prev, total: prev.total + 1 }));
-          }
-
-          setQueue(updatedQueue);
+          data = await res.json();
+          succeeded = true;
+        } else {
+          setGradeError(`Review save failed (HTTP ${res.status}). Tap again to retry.`);
         }
       } catch (err) {
         console.error('Review failed:', err);
+        setGradeError('Network error saving review. Tap again to retry.');
       }
+
+      if (!succeeded) {
+        return; // Do not advance; user's finally-block unlocks grading for retry
+      }
+
+      setGradeError(null);
+      if (result === 'wrong') {
+        setWrongCardIds((prev) => (prev.includes(card.id) ? prev : [...prev, card.id]));
+      } else {
+        setWrongCardIds((prev) => prev.filter((id) => id !== card.id));
+      }
+      setStats((prev) => ({
+        ...prev,
+        reviewed: prev.reviewed + 1,
+        correct: prev.correct + (result === 'correct' ? 1 : 0),
+        wrong: prev.wrong + (result === 'wrong' ? 1 : 0),
+        slotChanges: data.slotBefore !== data.slotAfter
+          ? [...prev.slotChanges, { cardId: card.id, from: data.slotBefore, to: data.slotAfter }]
+          : prev.slotChanges,
+      }));
+
+      const updatedQueue = [...queue];
+      updatedQueue[idx] = data.card;
+
+      if (isCram && result === 'wrong') {
+        const reinsertPos = Math.min(idx + 1 + 5, updatedQueue.length);
+        updatedQueue.splice(reinsertPos, 0, card);
+        setStats((prev) => ({ ...prev, total: prev.total + 1 }));
+      }
+
+      setQueue(updatedQueue);
 
       if (idx + 1 >= queue.length) {
         setSessionComplete(true);
@@ -488,6 +501,16 @@ export function StudyView() {
           mode={mode}
           onEndSession={() => { setSessionActive(false); setSessionComplete(false); }}
         />
+
+        {gradeError && (
+          <div className="card border-error/40 bg-error/[0.06] p-3 mb-3 flex items-center gap-2 text-sm text-error">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span className="flex-1">{gradeError}</span>
+            <button onClick={() => setGradeError(null)} className="text-xs text-error/70 hover:text-error px-2 py-0.5">
+              Dismiss
+            </button>
+          </div>
+        )}
 
         {/* 3D Flip Card */}
         <div

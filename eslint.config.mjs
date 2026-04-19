@@ -44,6 +44,20 @@ export default tseslint.config(
     },
   },
 
+  // Service worker (browser + service-worker globals)
+  {
+    files: ['client/public/sw.js'],
+    languageOptions: {
+      globals: {
+        self: 'readonly',
+        clients: 'readonly',
+        console: 'readonly',
+        fetch: 'readonly',
+        Notification: 'readonly',
+      },
+    },
+  },
+
   // Client files: browser globals
   {
     files: ['client/**/*.ts', 'client/**/*.tsx'],

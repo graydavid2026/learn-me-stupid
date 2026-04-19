@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Plus, Pencil, Trash2, Check, X } from 'lucide-react';
+import { ChevronDown, Plus, Trash2, Check, X } from 'lucide-react';
 import { useStore } from '../../stores/useStore';
 
 export function TopicDropdown() {
@@ -119,10 +119,10 @@ export function TopicDropdown() {
                   placeholder="Topic name..."
                   className="flex-1 input text-sm py-1"
                 />
-                <button onClick={handleCreate} className="p-1 text-green-400 hover:text-green-300">
+                <button onClick={handleCreate} aria-label="Create topic" className="p-1 text-green-400 hover:text-green-300">
                   <Check className="w-4 h-4" />
                 </button>
-                <button onClick={() => { setCreating(false); setNewName(''); }} className="p-1 text-gray-400 hover:text-gray-300">
+                <button onClick={() => { setCreating(false); setNewName(''); }} aria-label="Cancel" className="p-1 text-gray-400 hover:text-gray-300">
                   <X className="w-4 h-4" />
                 </button>
               </div>

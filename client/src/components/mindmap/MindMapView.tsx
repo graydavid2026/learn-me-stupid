@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import ReactFlow, {
   Node,
   Edge,
@@ -13,7 +13,7 @@ import ReactFlow, {
   MarkerType,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Map, RefreshCw, ZoomIn } from 'lucide-react';
+import { Map, RefreshCw } from 'lucide-react';
 import { useStore } from '../../stores/useStore';
 
 const TIER_COLORS: Record<number, string> = {

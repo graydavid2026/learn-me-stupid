@@ -1,5 +1,5 @@
 import { ReactNode, useEffect } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import { BookOpen, GraduationCap, LayoutGrid, Brain, BarChart3, Settings, Landmark } from 'lucide-react';
 import { useStore } from '../../stores/useStore';
 import { TopicDropdown } from './TopicDropdown';

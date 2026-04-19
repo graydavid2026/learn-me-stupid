@@ -29,6 +29,31 @@ function genId(): string {
 
 const INDIANA_TZ = 'America/Indiana/Indianapolis';
 
+// SQL date-expression builders for day-offset math. The offset is forced
+// through `Math.trunc(Number(...))` so only integers reach the resulting
+// SQL string — even if a caller mistakenly passes unvalidated input the
+// interpolation cannot introduce syntax or injection. Today these helpers
+// are only called with loop counters, but this keeps the pattern safe by
+// construction for future callers.
+function safeIntOffset(n: number): number {
+  const v = Math.trunc(Number(n));
+  return Number.isFinite(v) ? v : 0;
+}
+function sqlDateDayOffset(offset: number): string {
+  const n = safeIntOffset(offset);
+  return n === 0 ? "date('now')" : `date('now', '+${n} days')`;
+}
+function sqlDatetimeStartOfDayOffset(offset: number): string {
+  const n = safeIntOffset(offset);
+  return n === 0
+    ? "datetime('now')"
+    : `datetime('now', '+${n} days', 'start of day')`;
+}
+function sqlDatetimeEndOfDayOffset(offset: number): string {
+  const n = safeIntOffset(offset);
+  return `datetime('now', '+${n + 1} days', 'start of day')`;
+}
+
 // Start-of-day cutoff in Indiana timezone as a SQLite-friendly UTC datetime
 // string. New-card budget resets at midnight Indiana time, not on a rolling
 // 12-hour window, so the daily cap is consistent regardless of study time.
@@ -675,8 +700,8 @@ router.get('/timeline', (req, res) => {
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
     for (let i = 0; i < days; i++) {
-      const dayStart = i === 0 ? "date('now')" : `date('now', '+${i} days')`;
-      const dayEnd = i === 0 ? "date('now', '+1 day')" : `date('now', '+${i + 1} days')`;
+      const dayStart = sqlDateDayOffset(i);
+      const dayEnd = sqlDateDayOffset(i + 1);
 
       let due = 0;
       let overdue = 0;
@@ -883,8 +908,8 @@ router.get('/calendar', (req, res) => {
 
     const upcoming: any[] = [];
     for (let i = 0; i < days; i++) {
-      const dayStart = i === 0 ? "datetime('now')" : `datetime('now', '+${i} days', 'start of day')`;
-      const dayEnd = `datetime('now', '+${i + 1} days', 'start of day')`;
+      const dayStart = sqlDatetimeStartOfDayOffset(i);
+      const dayEnd = sqlDatetimeEndOfDayOffset(i);
 
       let sql: string;
       if (i === 0) {
@@ -965,8 +990,8 @@ router.get('/forecast', (_req, res) => {
 
     const weekForecast = [];
     for (let i = 0; i < 7; i++) {
-      const dayStart = i === 0 ? "datetime('now')" : `datetime('now', '+${i} days', 'start of day')`;
-      const dayEnd = `datetime('now', '+${i + 1} days', 'start of day')`;
+      const dayStart = sqlDatetimeStartOfDayOffset(i);
+      const dayEnd = sqlDatetimeEndOfDayOffset(i);
 
       let count: number;
       if (i === 0) {
@@ -1032,8 +1057,8 @@ router.get('/forecast-30d', (_req, res) => {
         );
         dueCount = row?.count || 0;
       } else {
-        const dayStart = `datetime('now', '+${i} days', 'start of day')`;
-        const dayEnd = `datetime('now', '+${i + 1} days', 'start of day')`;
+        const dayStart = sqlDatetimeStartOfDayOffset(i);
+        const dayEnd = sqlDatetimeEndOfDayOffset(i);
         const row = queryOne(
           `SELECT COUNT(*) as count FROM cards
            WHERE sr_is_active = 1

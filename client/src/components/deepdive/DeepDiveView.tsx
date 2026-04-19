@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Lightbulb, AlertTriangle, Link2, MessageSquare, Send, Loader2,
-  Check, ChevronRight, Brain, ArrowLeft, Play, Layers, X,
+  Check, ChevronRight, Brain, ArrowLeft, Layers,
 } from 'lucide-react';
 import { useStore, CardFull } from '../../stores/useStore';
 

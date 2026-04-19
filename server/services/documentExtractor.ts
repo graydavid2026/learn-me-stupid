@@ -1,5 +1,3 @@
-import logger from '../logger.js';
-
 interface ExtractedCard {
   front: string;
   back: string;

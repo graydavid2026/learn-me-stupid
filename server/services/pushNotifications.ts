@@ -1,5 +1,5 @@
 import webPush from 'web-push';
-import { queryAll, queryOne, run, exec } from '../db/index.js';
+import { queryAll, queryOne, run } from '../db/index.js';
 import logger from '../logger.js';
 
 interface SettingRow {
