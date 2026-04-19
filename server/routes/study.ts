@@ -71,31 +71,29 @@ function indianaDayCutoffUtc(): string {
   return cutoffUtc.toISOString().replace('T', ' ').slice(0, 19);
 }
 
-// How many slot-0 cards have been promoted past slot 0 in the last 12 hours.
-// Wrong answers on a New card don't count — the card never advanced.
-// Pass a topicId to scope the count to a single topic; the new-card
-// budget is per-topic, not global, so studying English doesn't starve
-// Russian (or any other topic).
+// How many distinct new cards have been attempted in the current budget window.
+// Counts slot-0 reviews whether they promoted or stayed at slot 0 — a wrong
+// answer still "burned" a slot of today's new-card attention. Same card
+// reviewed twice today counts once (DISTINCT card_id). Pass a topicId to
+// scope per-topic; the new-card budget is per-topic, not global.
 function newCardsLearnedToday(topicId?: string): number {
   const cutoff = indianaDayCutoffUtc();
   if (topicId) {
     const row = queryOne(
-      `SELECT COUNT(*) as count FROM review_log rl
+      `SELECT COUNT(DISTINCT rl.card_id) as count FROM review_log rl
          JOIN cards c ON c.id = rl.card_id
          JOIN card_sets cs ON cs.id = c.card_set_id
         WHERE rl.reviewed_at >= ?
           AND rl.slot_before = 0
-          AND rl.slot_after > 0
           AND cs.topic_id = ?`,
       [cutoff, topicId]
     );
     return row?.count || 0;
   }
   const row = queryOne(
-    `SELECT COUNT(*) as count FROM review_log
+    `SELECT COUNT(DISTINCT card_id) as count FROM review_log
      WHERE reviewed_at >= ?
-       AND slot_before = 0
-       AND slot_after > 0`,
+       AND slot_before = 0`,
     [cutoff]
   );
   return row?.count || 0;
@@ -334,14 +332,17 @@ router.get('/due', (req, res) => {
         const remaining = Math.max(0, dailyCap - used);
         if (remaining <= 0) continue;
         const topicLimit = Math.min(requestedNewLimit, remaining, globalBudgetLeft);
+        // For explicit "Learn New" sessions, previously-attempted slot-0 cards
+        // (the 0-bin / cards the user failed and that need re-learning) come
+        // BEFORE never-seen cards. Cooldown is not filtered here — the user
+        // explicitly wants to see what they've been working on.
         const orderClause = order === 'random'
-          ? 'ORDER BY RANDOM()'
-          : 'ORDER BY c.created_at ASC';
+          ? 'ORDER BY CASE WHEN c.sr_total_reviews > 0 THEN 0 ELSE 1 END, RANDOM()'
+          : 'ORDER BY CASE WHEN c.sr_total_reviews > 0 THEN 0 ELSE 1 END, c.created_at ASC';
         const rows = queryAll(
           `SELECT c.* FROM cards c
              JOIN card_sets cs ON cs.id = c.card_set_id
             WHERE c.sr_is_active = 1 AND c.sr_slot = 0
-              AND (c.sr_next_due_at IS NULL OR datetime(c.sr_next_due_at) <= datetime('now'))
               AND cs.topic_id = ?
             ${orderClause} LIMIT ?`,
           [t.id, topicLimit]
@@ -435,7 +436,7 @@ router.get('/due', (req, res) => {
           WHERE c.sr_is_active = 1 AND c.sr_slot = 0
             AND (c.sr_next_due_at IS NULL OR datetime(c.sr_next_due_at) <= datetime('now'))
             ${topicClause}
-          ORDER BY c.created_at ASC
+          ORDER BY CASE WHEN c.sr_total_reviews > 0 THEN 0 ELSE 1 END, c.created_at ASC
           LIMIT ?`,
         [...newParams, newCardLimit]
       );
@@ -474,7 +475,10 @@ router.get('/due', (req, res) => {
     if (mode === 'review') {
       sql += ' AND c.sr_slot > 0 AND c.sr_next_due_at IS NOT NULL AND datetime(c.sr_next_due_at) <= datetime(\'now\')';
     } else if (mode === 'new') {
-      sql += ' AND c.sr_slot = 0 AND (c.sr_next_due_at IS NULL OR datetime(c.sr_next_due_at) <= datetime(\'now\'))';
+      // Explicit "Learn New" — include cooldowned slot-0 cards (the 0-bin of
+      // cards the user failed and needs to re-learn). They are prioritized
+      // in the ORDER BY below.
+      sql += ' AND c.sr_slot = 0';
     } else {
       sql += ' AND (c.sr_next_due_at IS NULL OR datetime(c.sr_next_due_at) <= datetime(\'now\'))';
     }
@@ -497,11 +501,11 @@ router.get('/due', (req, res) => {
     }
 
     if (mode === 'new') {
-      // Random sampling across the full new-card pool so a small limit
-      // (e.g. 2) doesn't keep drawing the same alphabetically-earliest cards.
+      // Previously-attempted slot-0 cards (the 0-bin) come before never-seen
+      // cards. Random/entered controls the tiebreaker for the fresh cohort.
       sql += order === 'random'
-        ? ' ORDER BY RANDOM() LIMIT ?'
-        : ' ORDER BY c.created_at ASC LIMIT ?';
+        ? ' ORDER BY CASE WHEN c.sr_total_reviews > 0 THEN 0 ELSE 1 END, RANDOM() LIMIT ?'
+        : ' ORDER BY CASE WHEN c.sr_total_reviews > 0 THEN 0 ELSE 1 END, c.created_at ASC LIMIT ?';
       params.push(newCardLimit);
     } else {
       sql += ' ORDER BY c.sr_slot ASC, c.sr_next_due_at ASC';
