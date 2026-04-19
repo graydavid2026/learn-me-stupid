@@ -2,20 +2,22 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { Check, X, Minus, AlertTriangle, ChevronDown, ChevronRight, Clock, Sparkles } from 'lucide-react';
 
 const SLOT_COLORS: Record<number, string> = {
-  0: '#6b7280', 1: '#c75a5a', 2: '#c97a3b', 3: '#c9943b',
+  0: '#c75a5a', 1: '#c75a5a', 2: '#c97a3b', 3: '#c9943b',
   4: '#b8a44a', 5: '#8aab5a', 6: '#6aab6a', 7: '#3d9a6e',
   8: '#3a8a7a', 9: '#3a8a8a', 10: '#4a8aaa', 11: '#5b8a9a',
   12: '#7a7aaa', 13: '#8a6a9a',
 };
 
 const SLOT_LABELS: Record<number, string> = {
-  0: 'New', 1: '10m', 2: '1h', 3: '4h', 4: '1d', 5: '3d', 6: '1w',
+  0: 'Relearn', 1: '10m', 2: '1h', 3: '4h', 4: '1d', 5: '3d', 6: '1w',
   7: '2w', 8: '1mo', 9: '2mo', 10: '4mo', 11: '8mo', 12: '1yr', 13: '2yr',
 };
 
-// Slots shown in the timeline. Slot 3 (4h post-learning bridge) and above;
-// sub-4h slots (New, 10m, 1h) are in-session and not shown here.
-const TIMELINE_SLOTS = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+// Slots shown in the timeline. Slot 0 = the "relearn" bin (failed cards
+// that need to be re-attempted — fresh never-seen cards are NOT in this
+// column, they appear only via Learn New). Slots 1-2 are in-session and
+// not surfaced here.
+const TIMELINE_SLOTS = [0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
 
 type Chip = {
   id: string;

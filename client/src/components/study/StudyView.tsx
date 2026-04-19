@@ -448,15 +448,10 @@ export function StudyView() {
     let emptyTitle = 'No cards to study';
     let emptyMsg: string;
     if (mode === 'new') {
-      const topicHasNew = selectedTopic ? (selectedTopic as any).new_count > 0 || true : true;
-      if (topicHasNew) {
-        emptyTitle = 'Limit reached';
-        emptyMsg = selectedTopicId
-          ? `You've already learned ${dailyNewCardLimit} new cards in this topic (or ${globalNewCardLimit} total) within the last 12 hours. Check back soon!`
-          : `You've hit your limit of ${globalNewCardLimit} new cards across all topics in the last 12 hours. Check back soon!`;
-      } else {
-        emptyMsg = 'No new cards available in this topic. Add some cards or pick a different mode.';
-      }
+      emptyTitle = 'Daily new-card cap reached';
+      emptyMsg = selectedTopicId
+        ? `You've attempted ${dailyNewCardLimit} new cards in this topic (or ${globalNewCardLimit} total) within the last 12 hours, and nothing is in the Relearn bin. Check back when the window resets — or switch topic / mode.`
+        : `You've hit your cap of ${globalNewCardLimit} new-card attempts across all topics in the last 12 hours, and the Relearn bin is empty. Check back soon.`;
     } else if (mode === 'review') {
       emptyMsg = 'Nothing due to review right now. Come back later!';
     } else if (mode === 'cram') {

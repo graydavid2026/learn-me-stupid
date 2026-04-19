@@ -323,32 +323,45 @@ router.get('/due', (req, res) => {
     // topic is selected, pull up to `dailyCap` new cards from EACH topic
     // that still has budget remaining, capped by the global ceiling.
     if (mode === 'new' && dailyCap !== null && !topic) {
+      // All-topics Learn New: attempted (0-bin) cards are ALWAYS eligible;
+      // only fresh (never-seen) cards are gated by per-topic + global caps.
       const allTopics = queryAll(`SELECT id FROM topics`);
-      let allNewCards: any[] = [];
+      const allNewCards: any[] = [];
       let globalBudgetLeft = globalRemaining;
+      const freshOrderClause = order === 'random'
+        ? 'ORDER BY RANDOM()'
+        : 'ORDER BY c.created_at ASC';
       for (const t of allTopics) {
-        if (globalBudgetLeft <= 0) break;
-        const used = newCardsLearnedToday(t.id);
-        const remaining = Math.max(0, dailyCap - used);
-        if (remaining <= 0) continue;
-        const topicLimit = Math.min(requestedNewLimit, remaining, globalBudgetLeft);
-        // For explicit "Learn New" sessions, previously-attempted slot-0 cards
-        // (the 0-bin / cards the user failed and that need re-learning) come
-        // BEFORE never-seen cards. Cooldown is not filtered here — the user
-        // explicitly wants to see what they've been working on.
-        const orderClause = order === 'random'
-          ? 'ORDER BY CASE WHEN c.sr_total_reviews > 0 THEN 0 ELSE 1 END, RANDOM()'
-          : 'ORDER BY CASE WHEN c.sr_total_reviews > 0 THEN 0 ELSE 1 END, c.created_at ASC';
-        const rows = queryAll(
+        // 1) Attempted slot-0 cards — no budget gate
+        const attempted = queryAll(
           `SELECT c.* FROM cards c
              JOIN card_sets cs ON cs.id = c.card_set_id
-            WHERE c.sr_is_active = 1 AND c.sr_slot = 0
+            WHERE c.sr_is_active = 1 AND c.sr_slot = 0 AND c.sr_total_reviews > 0
               AND cs.topic_id = ?
-            ${orderClause} LIMIT ?`,
-          [t.id, topicLimit]
+            ORDER BY c.sr_last_reviewed_at ASC NULLS LAST
+            LIMIT ?`,
+          [t.id, requestedNewLimit]
         );
-        allNewCards.push(...rows);
-        globalBudgetLeft -= rows.length;
+        allNewCards.push(...attempted);
+
+        // 2) Fresh cards — capped by per-topic remaining budget and global ceiling
+        if (globalBudgetLeft > 0) {
+          const used = newCardsLearnedToday(t.id);
+          const remaining = Math.max(0, dailyCap - used);
+          const topicFreshCap = Math.min(requestedNewLimit, remaining, globalBudgetLeft);
+          if (topicFreshCap > 0) {
+            const fresh = queryAll(
+              `SELECT c.* FROM cards c
+                 JOIN card_sets cs ON cs.id = c.card_set_id
+                WHERE c.sr_is_active = 1 AND c.sr_slot = 0 AND c.sr_total_reviews = 0
+                  AND cs.topic_id = ?
+                ${freshOrderClause} LIMIT ?`,
+              [t.id, topicFreshCap]
+            );
+            allNewCards.push(...fresh);
+            globalBudgetLeft -= fresh.length;
+          }
+        }
       }
       const fullCards = allNewCards.map((c: any) => getFullCard(c.id)).filter(Boolean);
       return res.json(expandReversible(fullCards));
@@ -465,6 +478,53 @@ router.get('/due', (req, res) => {
       return res.json(expandReversible(smartFull));
     }
 
+    // ── Learn New mode: 0-bin always eligible; budget only caps fresh cards ──
+    // Previously-attempted slot-0 cards (user failed and needs to re-learn)
+    // are NOT limited by the daily new-card budget — they were already
+    // "spent". Only truly-new (never-reviewed) slot-0 cards are gated by
+    // the budget. This keeps the 0-bin visible even after the user has
+    // burned their daily cap.
+    if (mode === 'new') {
+      const filterClauses: string[] = ['c.sr_is_active = 1', 'c.sr_slot = 0'];
+      const filterParams: any[] = [];
+      if (topic) { filterClauses.push('cs.topic_id = ?'); filterParams.push(topic); }
+      if (set)   { filterClauses.push('c.card_set_id = ?'); filterParams.push(set); }
+      const whereSql = filterClauses.join(' AND ');
+
+      // 1) Attempted slot-0 cards (the 0-bin) — always eligible, oldest-failed first
+      const attempted = queryAll(
+        `SELECT c.* FROM cards c
+           JOIN card_sets cs ON cs.id = c.card_set_id
+          WHERE ${whereSql} AND c.sr_total_reviews > 0
+          ORDER BY c.sr_last_reviewed_at ASC NULLS LAST
+          LIMIT ?`,
+        [...filterParams, requestedNewLimit]
+      );
+
+      // 2) Fresh never-seen cards — capped by remaining budget
+      const freshSlots = Math.max(0, requestedNewLimit - attempted.length);
+      const freshCap = Math.min(freshSlots, newCardLimit);
+      const fresh = freshCap > 0 ? queryAll(
+        `SELECT c.* FROM cards c
+           JOIN card_sets cs ON cs.id = c.card_set_id
+          WHERE ${whereSql} AND c.sr_total_reviews = 0
+          ${order === 'random' ? 'ORDER BY RANDOM()' : 'ORDER BY c.created_at ASC'}
+          LIMIT ?`,
+        [...filterParams, freshCap]
+      ) : [];
+
+      let newCards = [...attempted, ...fresh];
+      let newFull = newCards.map((c: any) => getFullCard(c.id)).filter(Boolean);
+      if (tags) {
+        const tagList = (tags as string).split(',').map((t) => t.trim().toLowerCase());
+        newFull = newFull.filter((c: any) => {
+          const cardTags: string[] = JSON.parse(c.tags || '[]').map((t: string) => t.toLowerCase());
+          return tagList.some((t) => cardTags.includes(t));
+        });
+      }
+      return res.json(expandReversible(newFull));
+    }
+
     let sql = `
       SELECT c.* FROM cards c
       JOIN card_sets cs ON cs.id = c.card_set_id
@@ -474,11 +534,6 @@ router.get('/due', (req, res) => {
 
     if (mode === 'review') {
       sql += ' AND c.sr_slot > 0 AND c.sr_next_due_at IS NOT NULL AND datetime(c.sr_next_due_at) <= datetime(\'now\')';
-    } else if (mode === 'new') {
-      // Explicit "Learn New" — include cooldowned slot-0 cards (the 0-bin of
-      // cards the user failed and needs to re-learn). They are prioritized
-      // in the ORDER BY below.
-      sql += ' AND c.sr_slot = 0';
     } else {
       sql += ' AND (c.sr_next_due_at IS NULL OR datetime(c.sr_next_due_at) <= datetime(\'now\'))';
     }
@@ -500,16 +555,7 @@ router.get('/due', (req, res) => {
       params.push(safeInt(slotMax, MAX_SLOT, 0, MAX_SLOT));
     }
 
-    if (mode === 'new') {
-      // Previously-attempted slot-0 cards (the 0-bin) come before never-seen
-      // cards. Random/entered controls the tiebreaker for the fresh cohort.
-      sql += order === 'random'
-        ? ' ORDER BY CASE WHEN c.sr_total_reviews > 0 THEN 0 ELSE 1 END, RANDOM() LIMIT ?'
-        : ' ORDER BY CASE WHEN c.sr_total_reviews > 0 THEN 0 ELSE 1 END, c.created_at ASC LIMIT ?';
-      params.push(newCardLimit);
-    } else {
-      sql += ' ORDER BY c.sr_slot ASC, c.sr_next_due_at ASC';
-    }
+    sql += ' ORDER BY c.sr_slot ASC, c.sr_next_due_at ASC';
 
     const cards = queryAll(sql, params);
     let fullCards = cards.map((c: any) => getFullCard(c.id)).filter(Boolean);
@@ -1334,6 +1380,10 @@ router.get('/tranche-dashboard', (req, res) => {
       topicClause = ' AND cs.topic_id = ?';
       params.push(topicId);
     }
+    // Pulls both the 0-bin (slot 0 cards that have been attempted — the user
+    // failed and needs to re-learn) and the due review-phase cards (slot > 0).
+    // Fresh never-seen slot-0 cards are NOT included — they're surfaced via
+    // the Learn New flow and the "New today" top-strip counter.
     const rows = queryAll(
       `SELECT c.id, c.sr_slot, c.sr_next_due_at, c.sr_last_reviewed_at,
               (SELECT result FROM review_log
@@ -1342,11 +1392,13 @@ router.get('/tranche-dashboard', (req, res) => {
          FROM cards c
          JOIN card_sets cs ON cs.id = c.card_set_id
         WHERE c.sr_is_active = 1
-          AND c.sr_slot > 0
-          AND c.sr_next_due_at IS NOT NULL
-          AND datetime(c.sr_next_due_at) <= datetime('now')
+          AND (
+            (c.sr_slot = 0 AND c.sr_total_reviews > 0)
+            OR (c.sr_slot > 0 AND c.sr_next_due_at IS NOT NULL
+                AND datetime(c.sr_next_due_at) <= datetime('now'))
+          )
           ${topicClause}
-        ORDER BY c.sr_slot ASC, c.sr_next_due_at ASC`,
+        ORDER BY c.sr_slot ASC, c.sr_next_due_at ASC NULLS FIRST`,
       params
     );
 
@@ -1363,17 +1415,26 @@ router.get('/tranche-dashboard', (req, res) => {
     const bySlot = new Map<number, Chip[]>();
     let dueIn24hTotal = 0;
 
+    const nowIso = new Date(now).toISOString();
     for (const r of rows as any[]) {
+      // Slot 0 (attempted-but-wrong) chips may have a null or future
+      // `sr_next_due_at` (cooldown). Treat them as "available now" for
+      // display purposes — they're the 0-bin the user should keep working on.
+      const dueIso: string = r.sr_slot === 0
+        ? (r.sr_next_due_at && new Date(r.sr_next_due_at).getTime() > now
+            ? r.sr_next_due_at
+            : nowIso)
+        : r.sr_next_due_at;
       const chip: Chip = {
         id: r.id,
         slot: r.sr_slot,
-        due_at: r.sr_next_due_at,
+        due_at: dueIso,
         last_reviewed_at: r.sr_last_reviewed_at || null,
         last_result: r.last_result || null,
       };
       if (!bySlot.has(r.sr_slot)) bySlot.set(r.sr_slot, []);
       bySlot.get(r.sr_slot)!.push(chip);
-      const dueMs = new Date(r.sr_next_due_at).getTime();
+      const dueMs = new Date(dueIso).getTime();
       if (dueMs <= in24h) dueIn24hTotal++;
     }
 
