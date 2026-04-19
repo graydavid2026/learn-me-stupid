@@ -13,9 +13,9 @@ const SLOT_LABELS: Record<number, string> = {
   7: '2w', 8: '1mo', 9: '2mo', 10: '4mo', 11: '8mo', 12: '1yr', 13: '2yr',
 };
 
-// Slots shown in the timeline. Start at 1d — anything shorter (New, 5m,
-// 1h, 4h) is noise in the tranche strip.
-const TIMELINE_SLOTS = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+// Slots shown in the timeline. Slot 3 (4h post-learning bridge) and above;
+// sub-4h slots (New, 10m, 1h) are in-session and not shown here.
+const TIMELINE_SLOTS = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
 
 type Chip = {
   id: string;

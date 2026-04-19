@@ -9,16 +9,17 @@ const DAY = 24 * HOUR;
 const WEEK = 7 * DAY;
 
 // Slot intervals in milliseconds
-// Slot 1: Learning (in-session re-test, 10 min nominal — but the real
-//         mechanism is that slot-1 cards are re-served within the same
-//         study session. If the session ends first, they auto-graduate
-//         to slot 4 on next startup.)
-// Slots 2-3: Retired / unused (kept for historical review-log entries)
+// Slot 1: Learning (in-session re-test, 10 min nominal — slot-1 cards are
+//         re-served within the same study session. If the session ends
+//         first, they auto-graduate to slot 3 on next startup.)
+// Slot 2: Retired / unused (kept for historical review-log entries)
+// Slot 3: Post-learning bridge (4h due, 20h grace → 24h total window).
+//         First stop after learning, before the 1-day review cycle.
 // Slots 4-13: Review phase (exponential growth)
 export const SLOT_INTERVALS_MS: Record<number, number> = {
   1: 10 * 60 * 1000,         // 10 minutes (in-session re-test)
   2: 1 * HOUR,               // (retired)
-  3: 4 * HOUR,               // (retired)
+  3: 4 * HOUR,               // 4 hours (post-learning bridge)
   4: 1 * DAY,                // 1 day
   5: 3 * DAY,                // 3 days
   6: 1 * WEEK,               // 1 week
@@ -35,7 +36,7 @@ export const SLOT_INTERVALS_MS: Record<number, number> = {
 export const SLOT_GRACE_MS: Record<number, number> = {
   1: 2 * HOUR,            // 2 hours
   2: 2 * HOUR,            // (retired)
-  3: 2 * HOUR,            // (retired)
+  3: 20 * HOUR,           // 20 hours (→ 24h total window from review)
   4: 1 * DAY,             // 24 hours
   5: 1 * DAY,             // 24 hours
   6: 1 * DAY,             // 24 hours
@@ -74,12 +75,21 @@ export const SLOT_LABELS: Record<number, string> = {
   12: '1yr', 13: '2yr',
 };
 
-// Slot 1 is the in-session learning slot. Slots 2-3 are retired.
+// Slot 1 is the in-session learning slot. Slot 2 is retired.
 export const LEARNING_SLOT = 1;
+
+// Slot 3 is the post-learning bridge (4h/20h grace). Graduates from slot 1.
+export const GRADUATION_SLOT = 3;
 
 // Review slots (the main SR cycle — 1 day and beyond)
 export const MIN_SLOT = 4;
 export const MAX_SLOT = 13;
+
+// Cooldown applied when a card is demoted back to slot 0 after a wrong
+// answer. The card cannot be re-drawn from the new-card pool until this
+// window elapses — prevents gaming the system by immediately re-seeing
+// the card after flipping to the answer.
+export const WRONG_COOLDOWN_MS = 10 * 60 * 1000;
 
 // Default ease factor for new cards (SM-2 standard)
 export const DEFAULT_EASE = 2.5;
@@ -157,8 +167,6 @@ export function calculateCascadeRegression(currentSlot: number, nextDueAt: strin
     }
 
     slot--;
-    // Skip retired slots 2-3
-    if (slot > LEARNING_SLOT && slot < MIN_SLOT) slot = MIN_SLOT;
     const newInterval = SLOT_INTERVALS_MS[slot] || SLOT_INTERVALS_MS[MIN_SLOT];
     dueMs = graceDeadline + newInterval;
   }
@@ -208,11 +216,16 @@ export interface ReviewResult {
  *
  * Learning phase (once-a-day user design):
  * - New card (slot 0) correct → slot 1 (in-session re-test, due in 10 min)
- * - New card (slot 0) wrong → stay at slot 0 (try again next session)
- * - Slot 1 correct → graduate to slot 4 (1 day — enters review cycle)
- * - Slot 1 wrong → back to slot 0 (demote to new-card pool)
+ * - New card (slot 0) wrong → stay at slot 0 with 10-min cooldown
+ * - Slot 1 correct → slot 3 (post-learning bridge, 4h / 20h grace)
+ * - Slot 1 wrong → slot 0 with 10-min cooldown
  * - If a slot-1 card's session ends before re-test, the study route
- *   auto-graduates it to slot 4 on next load.
+ *   auto-graduates it to slot 3 on next load.
+ *
+ * Bridge phase (slot 3):
+ * - Correct within grace → advance to slot 4 (enters review cycle)
+ * - Correct AFTER grace → demote to slot 0 with 10-min cooldown
+ * - Wrong → demote to slot 0 with 10-min cooldown
  *
  * Review phase (slots 4+):
  * - Correct within grace → advance to next slot
@@ -281,40 +294,52 @@ export function processReview(
   let newSlot: number;
   let newEase = ease;
 
+  // Demote to slot 0 with a 10-minute cooldown. Used whenever a card
+  // in the learning/bridge phase is answered wrong or recovered too
+  // late — the user must wait before re-drawing it as a new card.
+  const demoteToNewWithCooldown = (): ReviewResult => ({
+    newSlot: 0,
+    nextDueAt: new Date(Date.now() + WRONG_COOLDOWN_MS).toISOString(),
+    graceDeadline: null,
+    scheduleLocked: false,
+    reviewType: 'standard',
+    easeAfter: updateEase(ease, result, quality),
+    lapsed: false,
+  });
+
   if (isNew) {
     if (result === 'correct') {
       // First correct → slot 1 (in-session re-test)
       newSlot = LEARNING_SLOT;
       newEase = updateEase(ease, result, quality);
     } else {
-      // Wrong on a new card — stay at slot 0
-      return {
-        newSlot: 0,
-        nextDueAt: null,
-        graceDeadline: null,
-        scheduleLocked: false,
-        reviewType: 'standard',
-        easeAfter: updateEase(ease, result, quality),
-        lapsed: false,
-      };
+      // Wrong on a new card — stay at slot 0 with cooldown
+      return demoteToNewWithCooldown();
     }
   } else if (isLearning) {
     // In-session learning re-test
     newEase = updateEase(ease, result, quality);
     if (result === 'correct') {
-      // Graduate to review cycle at slot 4 (1 day)
+      // Graduate to the post-learning bridge (4h / 20h grace)
+      newSlot = GRADUATION_SLOT;
+    } else {
+      // Wrong during learning → back to slot 0 with cooldown
+      return demoteToNewWithCooldown();
+    }
+  } else if (currentSlot === GRADUATION_SLOT) {
+    // Post-learning bridge (slot 3)
+    newEase = updateEase(ease, result, quality);
+    if (result === 'correct') {
+      const pastGrace = isPastGrace(nextDueAt, currentSlot);
+      if (pastGrace) {
+        // Recovered too late — restart from new with cooldown
+        return demoteToNewWithCooldown();
+      }
+      // Advance into the review cycle
       newSlot = MIN_SLOT;
     } else {
-      // Wrong during learning → back to slot 0 (new card pool)
-      return {
-        newSlot: 0,
-        nextDueAt: null,
-        graceDeadline: null,
-        scheduleLocked: false,
-        reviewType: 'standard',
-        easeAfter: newEase,
-        lapsed: false,
-      };
+      // Wrong on the bridge → back to slot 0 with cooldown
+      return demoteToNewWithCooldown();
     }
   } else {
     // Review phase (slots 4+)

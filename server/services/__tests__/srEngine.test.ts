@@ -13,6 +13,8 @@ import {
   MIN_SLOT,
   MAX_SLOT,
   LEARNING_SLOT,
+  GRADUATION_SLOT,
+  WRONG_COOLDOWN_MS,
 } from '../srEngine.js';
 
 const HOUR = 60 * 60 * 1000;
@@ -183,16 +185,18 @@ describe('calculateCascadeRegression', () => {
     expect(calculateCascadeRegression(8, 'not-a-date')).toBe(MIN_SLOT);
   });
 
-  it('skips retired slots 2-3 during regression', () => {
+  it('floors at MIN_SLOT during deep regression (does not leak into bridge/learning)', () => {
     const now = 1_700_000_000_000;
     freezeNow(now);
-    // Slot 4 with due far in the past — can't go below MIN_SLOT
+    // Slot 5 with due far in the past — can't go below MIN_SLOT (4)
     const dueMs = now - 365 * DAY;
     const result = calculateCascadeRegression(5, new Date(dueMs).toISOString());
     expect(result).toBe(MIN_SLOT);
-    // Should never land on slots 2 or 3
+    // Should never land on slots 1, 2, or 3 — those are learning/bridge,
+    // not review-cycle targets
+    expect(result).not.toBe(LEARNING_SLOT);
     expect(result).not.toBe(2);
-    expect(result).not.toBe(3);
+    expect(result).not.toBe(GRADUATION_SLOT);
   });
 });
 
@@ -303,33 +307,35 @@ describe('processReview — learning phase', () => {
     expect(result.reviewType).toBe('standard');
   });
 
-  it('slot 0 wrong → stays at slot 0, no schedule', () => {
+  it('slot 0 wrong → stays at slot 0 with 10-min cooldown', () => {
     const now = 1_700_000_000_000;
     freezeNow(now);
     const result = processReview('wrong', 0, null);
     expect(result.newSlot).toBe(0);
-    expect(result.nextDueAt).toBeNull();
+    expect(result.nextDueAt).not.toBeNull();
+    expect(new Date(result.nextDueAt!).getTime()).toBe(now + WRONG_COOLDOWN_MS);
     expect(result.graceDeadline).toBeNull();
     expect(result.scheduleLocked).toBe(false);
   });
 
-  it('slot 1 correct → graduates to slot 4 (review cycle)', () => {
+  it('slot 1 correct → graduates to slot 3 (post-learning bridge)', () => {
     const now = 1_700_000_000_000;
     freezeNow(now);
     const dueMs = now - 1000; // due in the past = card is due
     const result = processReview('correct', LEARNING_SLOT, new Date(dueMs).toISOString());
-    expect(result.newSlot).toBe(MIN_SLOT); // slot 4
+    expect(result.newSlot).toBe(GRADUATION_SLOT); // slot 3
     expect(result.nextDueAt).not.toBeNull();
     expect(result.graceDeadline).not.toBeNull();
   });
 
-  it('slot 1 wrong → back to slot 0', () => {
+  it('slot 1 wrong → back to slot 0 with 10-min cooldown', () => {
     const now = 1_700_000_000_000;
     freezeNow(now);
     const dueMs = now - 1000;
     const result = processReview('wrong', LEARNING_SLOT, new Date(dueMs).toISOString());
     expect(result.newSlot).toBe(0);
-    expect(result.nextDueAt).toBeNull();
+    expect(result.nextDueAt).not.toBeNull();
+    expect(new Date(result.nextDueAt!).getTime()).toBe(now + WRONG_COOLDOWN_MS);
     expect(result.graceDeadline).toBeNull();
   });
 
@@ -339,8 +345,52 @@ describe('processReview — learning phase', () => {
     const futureMs = now + 60_000;
     // Learning cards don't go through early-review path
     const result = processReview('correct', LEARNING_SLOT, new Date(futureMs).toISOString());
-    expect(result.newSlot).toBe(MIN_SLOT);
+    expect(result.newSlot).toBe(GRADUATION_SLOT);
     expect(result.reviewType).toBe('standard');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// processReview — Bridge Phase (slot 3)
+// ---------------------------------------------------------------------------
+describe('processReview — bridge phase (slot 3)', () => {
+  it('slot 3 correct within grace → advances to slot 4', () => {
+    const now = 1_700_000_000_000;
+    freezeNow(now);
+    const dueMs = now - 1000; // just past due, within 20h grace
+    const result = processReview('correct', GRADUATION_SLOT, new Date(dueMs).toISOString(), DEFAULT_EASE);
+    expect(result.newSlot).toBe(MIN_SLOT);
+    expect(result.nextDueAt).not.toBeNull();
+    expect(result.graceDeadline).not.toBeNull();
+  });
+
+  it('slot 3 correct past grace → demotes to slot 0 with 10-min cooldown', () => {
+    const now = 1_700_000_000_000;
+    freezeNow(now);
+    // Slot 3 grace is 20h. Due 25h ago = past grace.
+    const dueMs = now - (SLOT_GRACE_MS[GRADUATION_SLOT] + HOUR);
+    const result = processReview('correct', GRADUATION_SLOT, new Date(dueMs).toISOString(), DEFAULT_EASE);
+    expect(result.newSlot).toBe(0);
+    expect(new Date(result.nextDueAt!).getTime()).toBe(now + WRONG_COOLDOWN_MS);
+    expect(result.graceDeadline).toBeNull();
+  });
+
+  it('slot 3 wrong → demotes to slot 0 with 10-min cooldown', () => {
+    const now = 1_700_000_000_000;
+    freezeNow(now);
+    const dueMs = now - 1000;
+    const result = processReview('wrong', GRADUATION_SLOT, new Date(dueMs).toISOString(), DEFAULT_EASE);
+    expect(result.newSlot).toBe(0);
+    expect(new Date(result.nextDueAt!).getTime()).toBe(now + WRONG_COOLDOWN_MS);
+    expect(result.graceDeadline).toBeNull();
+  });
+
+  it('slot 3 grace is 20 hours', () => {
+    expect(SLOT_GRACE_MS[GRADUATION_SLOT]).toBe(20 * HOUR);
+  });
+
+  it('slot 3 interval is 4 hours', () => {
+    expect(SLOT_INTERVALS_MS[GRADUATION_SLOT]).toBe(4 * HOUR);
   });
 });
 
@@ -478,14 +528,14 @@ describe('processReview — ease-scaled intervals', () => {
     expect(nextDueMs).toBe(now + expectedInterval);
   });
 
-  it('slot 4 nextDueAt is NOT scaled by ease', () => {
+  it('slot 3 nextDueAt is NOT scaled by ease (pre-review cycle)', () => {
     const now = 1_700_000_000_000;
     freezeNow(now);
-    // Slot 1 correct → graduates to slot 4
+    // Slot 1 correct → graduates to slot 3
     const dueMs = now - 1000;
     const result = processReview('correct', LEARNING_SLOT, new Date(dueMs).toISOString(), 3.0);
     const nextDueMs = new Date(result.nextDueAt!).getTime();
-    expect(nextDueMs).toBe(now + SLOT_INTERVALS_MS[4]);
+    expect(nextDueMs).toBe(now + SLOT_INTERVALS_MS[GRADUATION_SLOT]);
   });
 });
 
@@ -518,21 +568,28 @@ describe('edge cases', () => {
     const r1 = processReview('correct', 0, null, DEFAULT_EASE, 1000);
     expect(r1.newSlot).toBe(1);
 
-    // Slot 1 correct → slot 4
+    // Slot 1 correct → slot 3 (post-learning bridge)
     freezeNow(now + 15 * 60_000); // 15 min later
     const r2 = processReview('correct', r1.newSlot, r1.nextDueAt, r1.easeAfter, 2000);
-    expect(r2.newSlot).toBe(4);
+    expect(r2.newSlot).toBe(GRADUATION_SLOT);
+
+    // Slot 3 correct (within 20h grace) → slot 4
+    const r2DueMs = new Date(r2.nextDueAt!).getTime();
+    freezeNow(r2DueMs + 1000); // just past due
+    const r3 = processReview('correct', r2.newSlot, r2.nextDueAt, r2.easeAfter, 1500);
+    expect(r3.newSlot).toBe(MIN_SLOT);
 
     // Slot 4 correct → slot 5
-    freezeNow(now + 2 * DAY); // 2 days later
-    const r3 = processReview('correct', r2.newSlot, r2.nextDueAt, r2.easeAfter, 1500);
-    expect(r3.newSlot).toBe(5);
-
-    // Slot 5 wrong → slot 4 (must be past due date so it's not an early review)
     const r3DueMs = new Date(r3.nextDueAt!).getTime();
-    freezeNow(r3DueMs + 1000); // just past due
-    const r4 = processReview('wrong', r3.newSlot, r3.nextDueAt, r3.easeAfter);
-    expect(r4.newSlot).toBe(4);
-    expect(r4.easeAfter).toBeLessThan(r3.easeAfter);
+    freezeNow(r3DueMs + 1000);
+    const r4 = processReview('correct', r3.newSlot, r3.nextDueAt, r3.easeAfter, 1500);
+    expect(r4.newSlot).toBe(5);
+
+    // Slot 5 wrong → slot 4
+    const r4DueMs = new Date(r4.nextDueAt!).getTime();
+    freezeNow(r4DueMs + 1000);
+    const r5 = processReview('wrong', r4.newSlot, r4.nextDueAt, r4.easeAfter);
+    expect(r5.newSlot).toBe(MIN_SLOT);
+    expect(r5.easeAfter).toBeLessThan(r4.easeAfter);
   });
 });

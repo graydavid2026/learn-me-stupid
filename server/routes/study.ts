@@ -12,6 +12,7 @@ import {
   MAX_SLOT,
   MIN_SLOT,
   LEARNING_SLOT,
+  GRADUATION_SLOT,
 } from '../services/srEngine.js';
 import { getSettingNum } from './settings.js';
 
@@ -238,7 +239,8 @@ router.get('/due', (req, res) => {
   try {
     // Auto-graduate slot-1 (learning) cards whose session has ended.
     // Slot 1 is an in-session re-test; if the grace deadline has passed
-    // (user didn't come back within the session), promote to slot 4.
+    // (user didn't come back within the session), promote to slot 3
+    // (post-learning bridge).
     const staleLearnCards = queryAll(
       `SELECT id FROM cards
        WHERE sr_is_active = 1 AND sr_slot = ?
@@ -248,11 +250,11 @@ router.get('/due', (req, res) => {
     );
     if (staleLearnCards.length > 0) {
       for (const lc of staleLearnCards) {
-        const nextDue = calculateNextDue(MIN_SLOT);
-        const grace = calculateGraceDeadline(nextDue, MIN_SLOT);
+        const nextDue = calculateNextDue(GRADUATION_SLOT);
+        const grace = calculateGraceDeadline(nextDue, GRADUATION_SLOT);
         run(
           `UPDATE cards SET sr_slot = ?, sr_next_due_at = ?, sr_grace_deadline = ?, updated_at = datetime('now') WHERE id = ?`,
-          [MIN_SLOT, nextDue, grace, lc.id]
+          [GRADUATION_SLOT, nextDue, grace, lc.id]
         );
       }
     }
@@ -314,6 +316,7 @@ router.get('/due', (req, res) => {
           `SELECT c.* FROM cards c
              JOIN card_sets cs ON cs.id = c.card_set_id
             WHERE c.sr_is_active = 1 AND c.sr_slot = 0
+              AND (c.sr_next_due_at IS NULL OR datetime(c.sr_next_due_at) <= datetime('now'))
               AND cs.topic_id = ?
             ${orderClause} LIMIT ?`,
           [t.id, topicLimit]
@@ -405,6 +408,7 @@ router.get('/due', (req, res) => {
         `SELECT c.* FROM cards c
            JOIN card_sets cs ON cs.id = c.card_set_id
           WHERE c.sr_is_active = 1 AND c.sr_slot = 0
+            AND (c.sr_next_due_at IS NULL OR datetime(c.sr_next_due_at) <= datetime('now'))
             ${topicClause}
           ORDER BY c.created_at ASC
           LIMIT ?`,
@@ -445,7 +449,7 @@ router.get('/due', (req, res) => {
     if (mode === 'review') {
       sql += ' AND c.sr_slot > 0 AND c.sr_next_due_at IS NOT NULL AND datetime(c.sr_next_due_at) <= datetime(\'now\')';
     } else if (mode === 'new') {
-      sql += ' AND c.sr_slot = 0';
+      sql += ' AND c.sr_slot = 0 AND (c.sr_next_due_at IS NULL OR datetime(c.sr_next_due_at) <= datetime(\'now\'))';
     } else {
       sql += ' AND (c.sr_next_due_at IS NULL OR datetime(c.sr_next_due_at) <= datetime(\'now\'))';
     }
@@ -568,7 +572,7 @@ router.get('/stats', (req, res) => {
     );
 
     const newCards = queryOne(
-      `SELECT COUNT(*) as count FROM cards c JOIN card_sets cs ON cs.id = c.card_set_id ${whereClause} AND c.sr_slot = 0`,
+      `SELECT COUNT(*) as count FROM cards c JOIN card_sets cs ON cs.id = c.card_set_id ${whereClause} AND c.sr_slot = 0 AND (c.sr_next_due_at IS NULL OR datetime(c.sr_next_due_at) <= datetime('now'))`,
       params
     );
 
@@ -1374,11 +1378,15 @@ router.get('/tranche-dashboard', (req, res) => {
       ? queryOne(
           `SELECT COUNT(*) as count FROM cards c
              JOIN card_sets cs ON cs.id = c.card_set_id
-            WHERE c.sr_is_active = 1 AND c.sr_slot = 0 AND cs.topic_id = ?`,
+            WHERE c.sr_is_active = 1 AND c.sr_slot = 0
+              AND (c.sr_next_due_at IS NULL OR datetime(c.sr_next_due_at) <= datetime('now'))
+              AND cs.topic_id = ?`,
           [topicId]
         )
       : queryOne(
-          `SELECT COUNT(*) as count FROM cards WHERE sr_is_active = 1 AND sr_slot = 0`,
+          `SELECT COUNT(*) as count FROM cards
+            WHERE sr_is_active = 1 AND sr_slot = 0
+              AND (sr_next_due_at IS NULL OR datetime(sr_next_due_at) <= datetime('now'))`,
           []
         );
 
