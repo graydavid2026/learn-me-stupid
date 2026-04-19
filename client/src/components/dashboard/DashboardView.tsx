@@ -633,6 +633,7 @@ export function DashboardView() {
   const [velocity, setVelocity] = useState<VelocityRow[]>([]);
   const [efficiency, setEfficiency] = useState<EfficiencyData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [dailyGoal, setDailyGoalState] = useState(getDailyGoal);
 
   // Load data
   useEffect(() => {
@@ -693,7 +694,6 @@ export function DashboardView() {
   const totalOverdue = forecast.topics.reduce((sum, t) => sum + t.overdue, 0);
 
   // Daily goal
-  const [dailyGoal, setDailyGoalState] = useState(getDailyGoal);
   const handleGoalChange = (n: number) => {
     setDailyGoalStorage(n);
     setDailyGoalState(n);
