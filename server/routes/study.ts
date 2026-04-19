@@ -844,9 +844,15 @@ router.post('/review', (req, res) => {
 // POST /api/study/decay-check — Run cascade regression on all active cards
 router.post('/decay-check', (_req, res) => {
   try {
+    // Cascade regression only applies to review-phase cards (slot >= MIN_SLOT).
+    // Learning (slot 1) and bridge (slot 3) cards are demoted to slot 0 by
+    // processReview on the next review attempt, not by auto-decay. Running
+    // cascade on slot 3 would silently promote it to slot 4 because the
+    // loop `while (slot > MIN_SLOT)` never executes for slot < 4 and the
+    // function returns `Math.max(slot, MIN_SLOT)`.
     const cards = queryAll(
-      'SELECT id, sr_slot, sr_next_due_at FROM cards WHERE sr_is_active = 1 AND sr_next_due_at IS NOT NULL AND sr_slot > 0',
-      []
+      'SELECT id, sr_slot, sr_next_due_at FROM cards WHERE sr_is_active = 1 AND sr_next_due_at IS NOT NULL AND sr_slot >= ?',
+      [MIN_SLOT]
     );
 
     let regressed = 0;

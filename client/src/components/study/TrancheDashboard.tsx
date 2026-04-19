@@ -326,7 +326,7 @@ export function TrancheDashboard({ dailyNewCardLimit, globalNewCardLimit, topicI
           "Start Studying" button handles the default all-due case, so we
           don't show a second, buried button beneath it. */}
       {selectedCount > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 md:left-64 bg-surface-base/95 backdrop-blur border-t border-border p-3 z-30">
+        <div className="fixed bottom-0 left-0 right-0 md:left-64 bg-surface-base/95 backdrop-blur border-t border-border p-3 z-30 safe-bottom">
           <div className="max-w-6xl mx-auto flex items-center gap-3">
             <button
               onClick={clearSelected}

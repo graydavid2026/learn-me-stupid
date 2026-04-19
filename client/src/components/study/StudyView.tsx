@@ -118,13 +118,13 @@ export function StudyView() {
         setFlipped((f) => !f);
       }
       if (flipped) {
-        if (e.key === '1') handleGrade('wrong');
-        if (e.key === '2') handleGrade('correct');
+        if (e.key === '1') handleGradeRef.current('wrong');
+        if (e.key === '2') handleGradeRef.current('correct');
       }
     }
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [sessionActive, sessionComplete, flipped, currentIndex, queue]);
+  }, [sessionActive, sessionComplete, flipped]);
 
   // Voice commands
   useEffect(() => {

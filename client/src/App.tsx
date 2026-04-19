@@ -6,6 +6,7 @@ import { CardsView } from './components/cards/CardsView';
 import { DeepDiveView } from './components/deepdive/DeepDiveView';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { SettingsView } from './components/settings/SettingsView';
+import { MemoryPalaceView } from './components/palace/MemoryPalaceView';
 import { SearchOverlay } from './components/layout/SearchOverlay';
 import { OnboardingFlow, useOnboarding } from './components/onboarding/OnboardingFlow';
 
@@ -31,6 +32,7 @@ export default function App() {
             <Route path="/cards" element={<CardsView />} />
             <Route path="/deep-dive" element={<DeepDiveView />} />
             <Route path="/stats" element={<DashboardView />} />
+            <Route path="/palace" element={<MemoryPalaceView />} />
             <Route path="/settings" element={<SettingsView />} />
           </Routes>
         </motion.div>

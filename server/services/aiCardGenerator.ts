@@ -90,7 +90,7 @@ Return ONLY a valid JSON array of objects with "front" and "back" string fields.
     cards = JSON.parse(jsonStr);
   } catch (parseErr) {
     logger.error({ text: jsonStr.slice(0, 500) }, 'Failed to parse Claude card generation response');
-    throw new Error('Failed to parse AI-generated cards — invalid JSON');
+    throw new Error('Failed to parse AI-generated cards — invalid JSON', { cause: parseErr });
   }
 
   if (!Array.isArray(cards)) {

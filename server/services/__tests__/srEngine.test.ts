@@ -185,6 +185,21 @@ describe('calculateCascadeRegression', () => {
     expect(calculateCascadeRegression(8, 'not-a-date')).toBe(MIN_SLOT);
   });
 
+  it('returns GRADUATION_SLOT unchanged when called on slot 3 (not review phase)', () => {
+    // calculateCascadeRegression is designed for review-phase cards only.
+    // The while-loop guard is `slot > MIN_SLOT`, so for slot 3 it does not
+    // execute, and the function falls through to `Math.max(slot, MIN_SLOT)`
+    // = 4. Callers MUST filter to sr_slot >= MIN_SLOT before invoking —
+    // otherwise they'd silently promote bridge cards to slot 4.
+    // This test pins the behavior so decay-check callers remember to filter.
+    const now = 1_700_000_000_000;
+    freezeNow(now);
+    const dueMs = now - 365 * DAY; // far past grace
+    const result = calculateCascadeRegression(GRADUATION_SLOT, new Date(dueMs).toISOString());
+    // Returns MIN_SLOT — this is why callers must filter.
+    expect(result).toBe(MIN_SLOT);
+  });
+
   it('floors at MIN_SLOT during deep regression (does not leak into bridge/learning)', () => {
     const now = 1_700_000_000_000;
     freezeNow(now);
