@@ -83,10 +83,10 @@ export function StudyView() {
 
   // Auto read-aloud
   useEffect(() => {
-    if (!ttsEnabled || !sessionActive || sessionComplete) {
-      cancelSpeech();
-      return;
-    }
+    // Always cancel any in-flight speech first so advancing to a card whose
+    // next side has nothing to read doesn't leave the previous card playing.
+    cancelSpeech();
+    if (!ttsEnabled || !sessionActive || sessionComplete) return;
     const card = queue[currentIndex];
     if (!card) return;
     if (flipped) {
@@ -299,6 +299,11 @@ export function StudyView() {
     const idx = currentIndex;
     const card = queue[idx];
     if (!card) return;
+
+    // Stop any in-flight TTS immediately on grade so the audio doesn't bleed
+    // into the next card. The card-change effect also cancels, but doing it
+    // synchronously here makes the cut-off feel instant.
+    cancelSpeech();
 
     setGrading(true);
     const responseTime = Date.now() - startTime.current;

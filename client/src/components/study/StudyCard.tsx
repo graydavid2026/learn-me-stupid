@@ -215,8 +215,21 @@ function chunkForSpeech(text: string, maxLen = 180): string[] {
 }
 
 let pendingTtsTimer: ReturnType<typeof setTimeout> | null = null;
+// Incremented on every cancel/new-speak so in-flight closures from a prior
+// call can detect they've been superseded and stop queuing further utterances.
+// Without this, speechSynthesis.cancel() fires onerror on the active utterance,
+// which re-enters speakNextChunk with the old chunk index and re-queues the
+// remaining chunks of the previous card.
+let speechSession = 0;
+
 export function cancelSpeech() {
+  speechSession++;
   if (typeof window !== 'undefined' && window.speechSynthesis) {
+    // Chrome quirk: if the queue is in a paused state (which can happen when
+    // speak() is called while another utterance is in-flight), cancel() fails
+    // to flush the in-flight utterance — it resumes later. resume() first
+    // forces the queue out of paused state so cancel() actually takes.
+    try { window.speechSynthesis.resume(); } catch {}
     window.speechSynthesis.cancel();
   }
   if (pendingTtsTimer) {
@@ -231,13 +244,18 @@ export function speakCard(segments: string[], pauseAfterFirstMs = 2000) {
   const plan = buildUtterancePlan(segments);
   if (plan.length === 0) return;
 
+  const mySession = speechSession;
+  const isCurrent = () => mySession === speechSession;
+
   let entryIndex = 0;
   const speakEntry = () => {
+    if (!isCurrent()) return;
     if (entryIndex >= plan.length) return;
     const entry = plan[entryIndex++];
     const chunks = chunkForSpeech(entry.text);
     let chunkIdx = 0;
     const speakNextChunk = () => {
+      if (!isCurrent()) return;
       if (chunkIdx >= chunks.length) {
         if (entryIndex === 1 && plan.length > 1) {
           pendingTtsTimer = setTimeout(speakEntry, pauseAfterFirstMs);
