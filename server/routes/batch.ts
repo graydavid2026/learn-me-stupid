@@ -5,6 +5,7 @@ import {
   processReview,
 } from '../services/srEngine.js';
 import logger from '../logger.js';
+import { logAudit } from '../services/auditLog.js';
 
 const router = Router();
 
@@ -306,6 +307,16 @@ router.delete('/cards', (req: Request, res: Response) => {
     } catch (txErr) {
       d.exec('ROLLBACK');
       throw txErr;
+    }
+
+    if (deleted > 0) {
+      logAudit({
+        action: 'bulk_delete',
+        entity_type: 'batch_cards',
+        cards_affected: deleted,
+        metadata: { requested: card_ids.length, not_found: notFound.length },
+        req,
+      });
     }
 
     res.json({ deleted, notFound });

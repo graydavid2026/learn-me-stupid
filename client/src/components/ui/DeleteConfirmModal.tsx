@@ -2,6 +2,8 @@
  * Two-stage delete confirmation: archive (deactivate) or permanently delete.
  * Adapted from Grid Wars DeleteConfirmModal.
  */
+import { useState } from 'react';
+
 interface Props {
   itemName: string;
   itemType: 'card' | 'set' | 'topic';
@@ -9,10 +11,27 @@ interface Props {
   onDelete: () => void;
   onCancel: () => void;
   hideArchive?: boolean;
+  // Number of child records that will be cascade-deleted (e.g. cards under a topic).
+  // When set, shown prominently. When above typedConfirmThreshold, the delete
+  // button is gated behind typing "DELETE".
+  cardCount?: number;
+  typedConfirmThreshold?: number;
 }
 
-export function DeleteConfirmModal({ itemName, itemType, onArchive, onDelete, onCancel, hideArchive }: Props) {
+export function DeleteConfirmModal({
+  itemName,
+  itemType,
+  onArchive,
+  onDelete,
+  onCancel,
+  hideArchive,
+  cardCount,
+  typedConfirmThreshold = 20,
+}: Props) {
   const showArchive = !hideArchive && onArchive;
+  const requireTyped = typeof cardCount === 'number' && cardCount >= typedConfirmThreshold;
+  const [typed, setTyped] = useState('');
+  const typedOk = !requireTyped || typed.trim().toUpperCase() === 'DELETE';
 
   return (
     <div
@@ -51,6 +70,29 @@ export function DeleteConfirmModal({ itemName, itemType, onArchive, onDelete, on
             )}
           </p>
 
+          {typeof cardCount === 'number' && cardCount > 0 && (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/[0.08] px-3 py-2 text-[11px] text-red-300">
+              This will also permanently delete <strong className="font-semibold">{cardCount.toLocaleString()}</strong>{' '}
+              card{cardCount === 1 ? '' : 's'} and all their review history.
+            </div>
+          )}
+
+          {requireTyped && (
+            <label className="block">
+              <span className="text-[10px] uppercase tracking-wider text-gray-500">
+                Type <strong className="text-red-400">DELETE</strong> to confirm
+              </span>
+              <input
+                autoFocus
+                type="text"
+                value={typed}
+                onChange={(e) => setTyped(e.target.value)}
+                placeholder="DELETE"
+                className="mt-1 w-full bg-surface-base border border-border rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:border-red-500/50 focus:ring-1 focus:ring-red-500/40 focus:outline-none"
+              />
+            </label>
+          )}
+
           {/* Archive option */}
           {showArchive && (
             <button
@@ -74,7 +116,8 @@ export function DeleteConfirmModal({ itemName, itemType, onArchive, onDelete, on
           {/* Delete option */}
           <button
             onClick={onDelete}
-            className="w-full text-left p-3 rounded-lg border border-red-500/30 bg-red-500/5 hover:bg-red-500/10 transition-colors group"
+            disabled={!typedOk}
+            className="w-full text-left p-3 rounded-lg border border-red-500/30 bg-red-500/5 hover:bg-red-500/10 transition-colors group disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-red-500/5"
           >
             <div className="flex items-center gap-3">
               <span className="text-red-400 text-lg">🗑</span>

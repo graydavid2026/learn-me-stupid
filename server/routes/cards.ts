@@ -6,6 +6,7 @@ import logger from '../logger.js';
 import { syncCardFts, removeCardFts } from './search.js';
 import { generateCards } from '../services/aiCardGenerator.js';
 import { extractFromPdf, splitIntoCards } from '../services/documentExtractor.js';
+import { logAudit } from '../services/auditLog.js';
 
 const pdfUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -419,6 +420,16 @@ router.delete('/cards/:id', (req: Request, res: Response) => {
 
     removeCardFts(id);
     run('DELETE FROM cards WHERE id = ?', [id]);
+
+    logAudit({
+      action: 'delete',
+      entity_type: 'card',
+      entity_id: id,
+      cards_affected: 1,
+      metadata: { card_set_id: existing.card_set_id },
+      req,
+    });
+
     res.json({ success: true });
   } catch (err) {
     logger.error({ err }, 'Error deleting card');

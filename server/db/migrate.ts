@@ -204,6 +204,27 @@ export async function migrate(): Promise<void> {
     );
   `);
 
+  // Migration: audit_log for destructive operations. Added 2026-04-24 after
+  // the Apr 22 DB wipe incident where the root cause was unknowable from
+  // existing logs. Every cascading delete records entity info + a snapshot
+  // of what got wiped so future incidents have evidence.
+  exec(`
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+      action TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT,
+      entity_name TEXT,
+      cards_affected INTEGER DEFAULT 0,
+      metadata TEXT,
+      ip_address TEXT,
+      user_agent TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log(entity_type, entity_id);
+  `);
+
   // Seed default settings if not present
   try {
     const defaults: [string, string][] = [

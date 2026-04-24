@@ -1,7 +1,8 @@
 import { Router, Request, Response } from 'express';
-import { queryAll, queryOne, run, CardSetRow, MaxOrderRow } from '../db/index.js';
+import { queryAll, queryOne, run, CardSetRow, MaxOrderRow, CountRow } from '../db/index.js';
 import { v4 as uuid } from 'uuid';
 import logger from '../logger.js';
+import { logAudit } from '../services/auditLog.js';
 
 const router = Router();
 
@@ -100,15 +101,31 @@ router.put('/sets/:id', (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/sets/:id — Delete card set (cascades)
+// DELETE /api/sets/:id — Delete card set (cascades to cards → review_log)
 router.delete('/sets/:id', (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const existing = queryOne<CardSetRow>('SELECT * FROM card_sets WHERE id = ?', [id]);
     if (!existing) return res.status(404).json({ error: 'Card set not found' });
 
+    const cardCount = queryOne<CountRow>(
+      `SELECT COUNT(*) AS n FROM cards WHERE card_set_id = ?`,
+      [id]
+    )?.n ?? 0;
+
     run('DELETE FROM card_sets WHERE id = ?', [id]);
-    res.json({ success: true });
+
+    logAudit({
+      action: 'cascade_delete',
+      entity_type: 'set',
+      entity_id: id,
+      entity_name: existing.name,
+      cards_affected: cardCount,
+      metadata: { topic_id: existing.topic_id },
+      req,
+    });
+
+    res.json({ success: true, cards_deleted: cardCount });
   } catch (err) {
     logger.error({ err }, 'Error deleting set');
     res.status(500).json({ error: 'Failed to delete set' });

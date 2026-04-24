@@ -1,12 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown, Plus, Trash2, Check, X } from 'lucide-react';
 import { useStore } from '../../stores/useStore';
+import { DeleteConfirmModal } from '../ui/DeleteConfirmModal';
 
 export function TopicDropdown() {
   const { topics, selectedTopicId, selectTopic, createTopic, deleteTopic } = useStore();
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string; cardCount: number } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const selectedTopic = topics.find((t) => t.id === selectedTopicId);
@@ -93,11 +95,10 @@ export function TopicDropdown() {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (confirm(`Delete "${topic.name}" and all its cards?`)) {
-                      deleteTopic(topic.id);
-                    }
+                    setPendingDelete({ id: topic.id, name: topic.name, cardCount: topic.card_count });
                   }}
                   className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-red-400 transition-opacity"
+                  aria-label={`Delete topic ${topic.name}`}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -137,6 +138,21 @@ export function TopicDropdown() {
             )}
           </div>
         </div>
+      )}
+
+      {pendingDelete && (
+        <DeleteConfirmModal
+          itemName={pendingDelete.name}
+          itemType="topic"
+          cardCount={pendingDelete.cardCount}
+          hideArchive
+          onDelete={() => {
+            const id = pendingDelete.id;
+            setPendingDelete(null);
+            deleteTopic(id);
+          }}
+          onCancel={() => setPendingDelete(null)}
+        />
       )}
     </div>
   );

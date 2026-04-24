@@ -18,6 +18,7 @@ import settingsRouter from './routes/settings.js';
 import ankiRouter from './routes/anki.js';
 import batchRouter from './routes/batch.js';
 import pushRouter from './routes/push.js';
+import auditRouter from './routes/audit.js';
 import { runBackupCycle, startScheduledBackups } from './services/backup.js';
 import { checkAndSendDueReminder } from './services/pushNotifications.js';
 
@@ -57,6 +58,7 @@ app.use('/api/settings', settingsRouter);
 app.use('/api', ankiRouter);
 app.use('/api/batch', batchRouter);
 app.use('/api/push', pushRouter);
+app.use('/api/audit', auditRouter);
 
 // Manual backup trigger
 app.post('/api/backup/now', (_req, res) => {

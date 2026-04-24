@@ -1,7 +1,8 @@
 import { Router, Request, Response } from 'express';
-import { queryAll, queryOne, run, TopicRow, CardSideRow, MaxOrderRow } from '../db/index.js';
+import { queryAll, queryOne, run, TopicRow, CardSideRow, MaxOrderRow, CountRow } from '../db/index.js';
 import { v4 as uuid } from 'uuid';
 import logger from '../logger.js';
+import { logAudit } from '../services/auditLog.js';
 
 const router = Router();
 
@@ -272,15 +273,35 @@ A single JSON blob I can hand to Claude Code with the instruction "insert these 
   }
 });
 
-// DELETE /api/topics/:id — Delete topic (cascades)
+// DELETE /api/topics/:id — Delete topic (cascades to sets → cards → review_log)
 router.delete('/:id', (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const existing = queryOne<TopicRow>('SELECT * FROM topics WHERE id = ?', [id]);
     if (!existing) return res.status(404).json({ error: 'Topic not found' });
 
+    const cardCount = queryOne<CountRow>(
+      `SELECT COUNT(*) AS n FROM cards c JOIN card_sets s ON c.card_set_id = s.id WHERE s.topic_id = ?`,
+      [id]
+    )?.n ?? 0;
+    const setCount = queryOne<CountRow>(
+      `SELECT COUNT(*) AS n FROM card_sets WHERE topic_id = ?`,
+      [id]
+    )?.n ?? 0;
+
     run('DELETE FROM topics WHERE id = ?', [id]);
-    res.json({ success: true });
+
+    logAudit({
+      action: 'cascade_delete',
+      entity_type: 'topic',
+      entity_id: id,
+      entity_name: existing.name,
+      cards_affected: cardCount,
+      metadata: { set_count: setCount },
+      req,
+    });
+
+    res.json({ success: true, cards_deleted: cardCount, sets_deleted: setCount });
   } catch (err) {
     logger.error({ err }, 'Error deleting topic');
     res.status(500).json({ error: 'Failed to delete topic' });
