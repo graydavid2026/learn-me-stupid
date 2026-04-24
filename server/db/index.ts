@@ -116,17 +116,51 @@ let initPromise: Promise<Database> | null = null;
 let dirty = false;
 let saveInterval: ReturnType<typeof setInterval> | null = null;
 
+// Wait for the DB directory to become available. Azure Files volume mounts
+// are sometimes not ready the instant the container starts; if we proceeded
+// eagerly we would see "file missing" and create a fresh empty DB that would
+// later overwrite the real data on the share (2026-04-22 incident).
+async function waitForDbDirectory(dbPath: string, timeoutMs = 30_000): Promise<void> {
+  const dir = path.dirname(dbPath);
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (fs.existsSync(dir)) return;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error(
+    `DB directory ${dir} not available after ${timeoutMs}ms — volume mount may not be ready`
+  );
+}
+
 export async function initDb(): Promise<Database> {
   if (db) return db;
   if (initPromise) return initPromise;
 
   initPromise = (async () => {
+    const isProd = process.env.NODE_ENV === 'production';
+
+    if (isProd) {
+      await waitForDbDirectory(DB_PATH);
+    }
+
     const SQL = await initSqlJs();
 
     if (fs.existsSync(DB_PATH)) {
       const buffer = fs.readFileSync(DB_PATH);
       db = new SQL.Database(buffer);
     } else {
+      // File missing. In production this is almost always a volume-mount race,
+      // not a genuine first-time setup. Creating an empty DB here causes the
+      // subsequent persist to overwrite the real DB on the share. Refuse to
+      // start unless the operator has explicitly opted in.
+      if (isProd && process.env.ALLOW_FRESH_DB !== 'true') {
+        throw new Error(
+          `Database file not found at ${DB_PATH}. Refusing to create a fresh empty DB in production ` +
+          `(guard against volume-mount races — see 2026-04-22 wipe). If this is a genuine first-time ` +
+          `setup, set ALLOW_FRESH_DB=true for one deploy, then remove it.`
+        );
+      }
+      logger.warn(`No DB file at ${DB_PATH} — creating fresh empty DB`);
       db = new SQL.Database();
     }
 
