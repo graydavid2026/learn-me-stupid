@@ -110,11 +110,64 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Azure Files volume (e.g. /app/data/mnemonic.db) without the mount
 // clobbering source .ts files that live alongside the default location.
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'mnemonic.db');
+// Where daily backups live (same resolution as services/backup.ts). Used to
+// self-heal when a cold start reads the volume-mounted DB as empty.
+const BACKUP_DIR = process.env.BACKUP_DIR || path.join(__dirname, '..', '..', 'data', 'backups');
+// A fresh/empty migrated DB is ~143KB; a populated one is >1MB. Files at or
+// below this are treated as "no real data" for the overwrite/self-heal guards.
+const EMPTY_DB_MAX_BYTES = 300_000;
 
 let db: Database | null = null;
 let initPromise: Promise<Database> | null = null;
 let dirty = false;
 let saveInterval: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Count rows in the cards table. Returns -1 if the table doesn't exist yet
+ * (e.g. a brand-new/empty-read DB before migrate). Used to detect a DB that
+ * has no real data so we never persist it over a populated file.
+ */
+function countCards(database: Database): number {
+  try {
+    const stmt = database.prepare('SELECT COUNT(*) AS n FROM cards');
+    let n = -1;
+    if (stmt.step()) {
+      const row = stmt.getAsObject() as { n?: number };
+      n = Number(row.n) || 0;
+    }
+    stmt.free();
+    return n;
+  } catch {
+    return -1; // cards table missing — not migrated / empty read
+  }
+}
+
+/** True when the on-disk DB file exists and is large enough to hold real data. */
+function onDiskHasData(p: string): boolean {
+  try {
+    return fs.existsSync(p) && fs.statSync(p).size > EMPTY_DB_MAX_BYTES;
+  } catch {
+    return false;
+  }
+}
+
+/** Newest backup file that actually contains data (by size), or null. */
+function newestNonEmptyBackup(): string | null {
+  try {
+    if (!fs.existsSync(BACKUP_DIR)) return null;
+    const files = fs.readdirSync(BACKUP_DIR)
+      .filter((f) => f.startsWith('mnemonic-') && f.endsWith('.db'))
+      .sort()
+      .reverse();
+    for (const f of files) {
+      const p = path.join(BACKUP_DIR, f);
+      try {
+        if (fs.statSync(p).size > EMPTY_DB_MAX_BYTES) return p;
+      } catch { /* ignore unreadable backup */ }
+    }
+  } catch { /* ignore */ }
+  return null;
+}
 
 // Wait for the DB directory to become available. Azure Files volume mounts
 // are sometimes not ready the instant the container starts; if we proceeded
@@ -148,6 +201,29 @@ export async function initDb(): Promise<Database> {
     if (fs.existsSync(DB_PATH)) {
       const buffer = fs.readFileSync(DB_PATH);
       db = new SQL.Database(buffer);
+
+      // Self-heal an empty cold-start read. Azure Files mounts can return the
+      // DB as zero-length/no-tables on a cold start; loading that and letting
+      // the debounced save run is exactly what wiped prod on 2026-04-22 and
+      // 2026-06-06 (the file "existed" so the missing-file guard never fired).
+      // If the loaded DB has no real data but the file is small AND a non-empty
+      // backup exists, restore from the newest non-empty backup instead.
+      if (countCards(db) <= 0 && buffer.length <= EMPTY_DB_MAX_BYTES) {
+        const backup = newestNonEmptyBackup();
+        if (backup) {
+          logger.error(
+            { dbPath: DB_PATH, dbSizeBytes: buffer.length, backup },
+            'DB loaded EMPTY (suspected volume-mount empty-read) — restoring from newest non-empty backup'
+          );
+          db.close();
+          db = new SQL.Database(fs.readFileSync(backup));
+        } else {
+          logger.warn(
+            { dbPath: DB_PATH, dbSizeBytes: buffer.length },
+            'DB loaded with no data and no non-empty backup available to restore from'
+          );
+        }
+      }
     } else {
       // File missing. In production this is almost always a volume-mount race,
       // not a genuine first-time setup. Creating an empty DB here causes the
@@ -193,6 +269,17 @@ function markDirty(): void {
 
 function persistAsync(): void {
   if (!db) return;
+  // Bulletproof guard: never overwrite a populated on-disk DB with an empty
+  // in-memory one. This is the last line of defense against the cold-start
+  // empty-read wipe — even if everything upstream fails, the good file on the
+  // volume survives and the next restart can recover from it.
+  if (countCards(db) === 0 && onDiskHasData(DB_PATH)) {
+    logger.fatal(
+      { dbPath: DB_PATH },
+      'BLOCKED save: in-memory DB has 0 cards but on-disk DB has data — refusing to overwrite (wipe prevention)'
+    );
+    return;
+  }
   try {
     const data = db.export();
     const buffer = Buffer.from(data);
@@ -212,6 +299,15 @@ export function flushDb(): void {
   }
   if (!db || !dirty) return;
   dirty = false;
+  // Same wipe-prevention guard as persistAsync — never flush an empty DB over
+  // a populated file (e.g. on shutdown after a cold-start empty-read).
+  if (countCards(db) === 0 && onDiskHasData(DB_PATH)) {
+    logger.fatal(
+      { dbPath: DB_PATH },
+      'BLOCKED flush: in-memory DB has 0 cards but on-disk DB has data — refusing to overwrite (wipe prevention)'
+    );
+    return;
+  }
   try {
     const data = db.export();
     const buffer = Buffer.from(data);
