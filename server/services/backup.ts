@@ -1,13 +1,16 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { flushDb } from '../db/index.js';
+import { flushDb, queryOne } from '../db/index.js';
 import logger from '../logger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'db', 'mnemonic.db');
 const BACKUP_DIR = process.env.BACKUP_DIR || path.join(__dirname, '..', '..', 'data', 'backups');
-const MAX_BACKUPS = 7;
+// Keep a month of daily backups. A backup runs on every startup, so a short
+// window means a wiped DB can prune away every good backup within a handful of
+// restarts. 30 gives a real recovery window.
+const MAX_BACKUPS = 30;
 
 function ensureBackupDir(): void {
   if (!fs.existsSync(BACKUP_DIR)) {
@@ -15,8 +18,30 @@ function ensureBackupDir(): void {
   }
 }
 
-/** Create a timestamped backup of the database file. Returns the backup path. */
-export function createBackup(): string {
+/**
+ * Returns the number of cards currently in the DB, or null if that can't be
+ * determined (table missing / query error). Used to refuse backing up a
+ * wiped/empty DB over good backups.
+ */
+function cardCount(): number | null {
+  try {
+    const row = queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM cards');
+    return row ? row.n : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Create a timestamped backup of the database file. Returns the backup path,
+ * or null if the backup was skipped because the DB is empty.
+ *
+ * Skipping empty DBs is the single most important safety property here: after
+ * a wipe, the next startup would otherwise snapshot the empty DB and prune a
+ * good backup — propagating the wipe into the backup set until recovery is
+ * impossible (this nearly destroyed the only good backup on 2026-06-06).
+ */
+export function createBackup(): string | null {
   ensureBackupDir();
 
   // Flush any pending writes to disk first
@@ -24,6 +49,15 @@ export function createBackup(): string {
 
   if (!fs.existsSync(DB_PATH)) {
     throw new Error(`Database file not found at ${DB_PATH}`);
+  }
+
+  const cards = cardCount();
+  if (cards === 0 || cards === null) {
+    logger.warn(
+      { cardCount: cards },
+      'Skipping backup: DB has no cards (refusing to overwrite/prune good backups with an empty snapshot)'
+    );
+    return null;
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -53,8 +87,13 @@ export function pruneBackups(): number {
 }
 
 /** Run a full backup cycle: create backup + prune old ones. */
-export function runBackupCycle(): { backupPath: string; removedCount: number } {
+export function runBackupCycle(): { backupPath: string | null; removedCount: number } {
   const backupPath = createBackup();
+  // Only prune when we actually created a backup. If the backup was skipped
+  // (empty DB), pruning would delete good backups for nothing.
+  if (!backupPath) {
+    return { backupPath: null, removedCount: 0 };
+  }
   const removedCount = pruneBackups();
   logger.info(`Backup created: ${backupPath} (pruned ${removedCount} old backup${removedCount !== 1 ? 's' : ''})`);
   return { backupPath, removedCount };

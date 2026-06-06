@@ -1,7 +1,23 @@
-import { initDb, run, exec } from './index.js';
+import { initDb, run, exec, queryOne } from './index.js';
 
 async function seed() {
   await initDb();
+
+  // Safety guard: db:seed is destructive (DELETE FROM card_sets/topics). Refuse
+  // to run if real data already exists or we're in production, unless explicitly
+  // forced with --force or SEED_FORCE=true. This sample data (topic001/set001 …)
+  // is the fingerprint of an accidental seed-over-real-data wipe.
+  const forced = process.argv.includes('--force') || process.env.SEED_FORCE === 'true';
+  const existing = queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM topics')?.n ?? 0;
+  if ((existing > 0 || process.env.NODE_ENV === 'production') && !forced) {
+    console.error(
+      `Refusing to seed: ${existing} topic(s) already present` +
+      (process.env.NODE_ENV === 'production' ? ' (NODE_ENV=production)' : '') +
+      '. This would DELETE all topics, sets, cards and review history. ' +
+      'Re-run with --force (or SEED_FORCE=true) only if you truly want a clean sample DB.'
+    );
+    process.exit(1);
+  }
 
   // Clear existing data
   exec('DELETE FROM card_sets; DELETE FROM topics;');
