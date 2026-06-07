@@ -1,12 +1,21 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { flushDb, queryOne } from '../db/index.js';
+import { flushDb, queryOne, queryAll } from '../db/index.js';
 import logger from '../logger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'db', 'mnemonic.db');
 const BACKUP_DIR = process.env.BACKUP_DIR || path.join(__dirname, '..', '..', 'data', 'backups');
+// Must match the upload dir used by index.ts / routes/media.ts. In prod this is
+// the persistent Azure Files share (/app/data/uploads).
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '..', 'uploads');
+// Append-only archive of every uploaded file ever seen. Uploads themselves live
+// on the persistent share, but that protects only against restarts — not against
+// an accidental file delete or the uploads dir being cleared. The archive keeps a
+// second copy (deduped by name+size, never pruned) so any DB-referenced image can
+// be self-healed back onto disk on startup. Mirrors the DB self-heal philosophy.
+const UPLOADS_ARCHIVE_DIR = path.join(BACKUP_DIR, 'uploads-archive');
 // Keep a month of daily backups. A backup runs on every startup, so a short
 // window means a wiped DB can prune away every good backup within a handful of
 // restarts. 30 gives a real recovery window.
@@ -86,17 +95,105 @@ export function pruneBackups(): number {
   return removed;
 }
 
-/** Run a full backup cycle: create backup + prune old ones. */
-export function runBackupCycle(): { backupPath: string | null; removedCount: number } {
+/**
+ * Copy any upload file not already archived (deduped by name + byte size) into
+ * the append-only archive. Never deletes from the archive, so a file removed
+ * from the live uploads dir stays recoverable. Returns the number of newly
+ * archived files. Failures on individual files are logged, not thrown — a
+ * backup of the rest must still proceed.
+ */
+export function backupUploads(): number {
+  if (!fs.existsSync(UPLOADS_DIR)) return 0;
+  if (!fs.existsSync(UPLOADS_ARCHIVE_DIR)) {
+    fs.mkdirSync(UPLOADS_ARCHIVE_DIR, { recursive: true });
+  }
+
+  let archived = 0;
+  for (const name of fs.readdirSync(UPLOADS_DIR)) {
+    try {
+      const src = path.join(UPLOADS_DIR, name);
+      if (!fs.statSync(src).isFile()) continue;
+      const dest = path.join(UPLOADS_ARCHIVE_DIR, name);
+      if (fs.existsSync(dest) && fs.statSync(dest).size === fs.statSync(src).size) {
+        continue; // already archived
+      }
+      fs.copyFileSync(src, dest);
+      archived++;
+    } catch (err) {
+      logger.error({ err, name }, 'Failed to archive upload');
+    }
+  }
+  return archived;
+}
+
+/**
+ * Self-heal: for every file_path referenced by a media block, if the file is
+ * missing from the live uploads dir but present in the archive, copy it back.
+ * Only restores DB-referenced files (not every orphan ever uploaded) so a
+ * deliberately deleted image is not resurrected. Call once on startup, after
+ * the DB is initialized. Returns the number of files restored.
+ */
+export function restoreMissingUploads(): number {
+  if (!fs.existsSync(UPLOADS_ARCHIVE_DIR)) return 0;
+  if (!fs.existsSync(UPLOADS_DIR)) {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  }
+
+  let referenced: { file_path: string }[];
+  try {
+    referenced = queryAll<{ file_path: string }>(
+      "SELECT DISTINCT file_path FROM media_blocks WHERE file_path IS NOT NULL AND file_path != ''"
+    );
+  } catch (err) {
+    logger.error({ err }, 'Could not read media_blocks for upload self-heal');
+    return 0;
+  }
+
+  let restored = 0;
+  for (const { file_path } of referenced) {
+    try {
+      const safe = path.basename(file_path); // guard against path traversal
+      const live = path.join(UPLOADS_DIR, safe);
+      if (fs.existsSync(live)) continue;
+      const archived = path.join(UPLOADS_ARCHIVE_DIR, safe);
+      if (!fs.existsSync(archived)) continue;
+      fs.copyFileSync(archived, live);
+      restored++;
+    } catch (err) {
+      logger.error({ err, file_path }, 'Failed to restore upload from archive');
+    }
+  }
+  if (restored > 0) {
+    logger.info(`Restored ${restored} missing upload${restored !== 1 ? 's' : ''} from archive`);
+  }
+  return restored;
+}
+
+/** Run a full backup cycle: create backup + prune old ones + archive uploads. */
+export function runBackupCycle(): { backupPath: string | null; removedCount: number; uploadsArchived: number } {
+  // Archive uploads regardless of DB state — they are independent of the DB and
+  // archiving is append-only, so it is always safe (never overwrites good data).
+  let uploadsArchived = 0;
+  try {
+    uploadsArchived = backupUploads();
+  } catch (err) {
+    logger.error({ err }, 'Upload archive step failed');
+  }
+
   const backupPath = createBackup();
   // Only prune when we actually created a backup. If the backup was skipped
   // (empty DB), pruning would delete good backups for nothing.
   if (!backupPath) {
-    return { backupPath: null, removedCount: 0 };
+    if (uploadsArchived > 0) {
+      logger.info(`Archived ${uploadsArchived} new upload${uploadsArchived !== 1 ? 's' : ''} (DB backup skipped)`);
+    }
+    return { backupPath: null, removedCount: 0, uploadsArchived };
   }
   const removedCount = pruneBackups();
-  logger.info(`Backup created: ${backupPath} (pruned ${removedCount} old backup${removedCount !== 1 ? 's' : ''})`);
-  return { backupPath, removedCount };
+  logger.info(
+    `Backup created: ${backupPath} (pruned ${removedCount} old backup${removedCount !== 1 ? 's' : ''}, archived ${uploadsArchived} new upload${uploadsArchived !== 1 ? 's' : ''})`
+  );
+  return { backupPath, removedCount, uploadsArchived };
 }
 
 /** Start the daily backup interval. Call once on server startup. */

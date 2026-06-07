@@ -20,7 +20,7 @@ import ankiRouter from './routes/anki.js';
 import batchRouter from './routes/batch.js';
 import pushRouter from './routes/push.js';
 import auditRouter from './routes/audit.js';
-import { runBackupCycle, startScheduledBackups } from './services/backup.js';
+import { runBackupCycle, startScheduledBackups, restoreMissingUploads } from './services/backup.js';
 import { checkAndSendDueReminder } from './services/pushNotifications.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -80,7 +80,7 @@ app.use('/api/audit', auditRouter);
 app.post('/api/backup/now', (_req, res) => {
   try {
     const result = runBackupCycle();
-    res.json({ status: 'ok', backupPath: result.backupPath, prunedCount: result.removedCount });
+    res.json({ status: 'ok', backupPath: result.backupPath, prunedCount: result.removedCount, uploadsArchived: result.uploadsArchived });
   } catch (err: unknown) {
     logger.error({ err }, 'Manual backup failed');
     const message = err instanceof Error ? err.message : String(err);
@@ -105,6 +105,14 @@ async function start() {
   await initDb();
   // Run migrations on startup
   await migrate();
+
+  // Self-heal: restore any DB-referenced upload missing from disk (e.g. after an
+  // uploads-dir wipe) from the append-only archive before serving traffic.
+  try {
+    restoreMissingUploads();
+  } catch (err) {
+    logger.error({ err }, 'Upload self-heal on startup failed');
+  }
 
   // Start scheduled daily backups
   startScheduledBackups();
