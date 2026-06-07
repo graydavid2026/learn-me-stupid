@@ -594,7 +594,7 @@ export function StudyView() {
               <div className="text-xs uppercase tracking-wider text-text-tertiary mb-2 text-center shrink-0">Answer</div>
 
               {/* Back content */}
-              <div className="flex-1 overflow-y-auto flex flex-col items-start space-y-3 min-h-[80px]">
+              <div className="flex-1 overflow-y-auto flex flex-col items-center space-y-3 min-h-[80px] text-center">
                 {(() => {
                   const isCloze = (currentCard.card_type || 'standard') === 'cloze';
                   const hasImg = currentCard.back.media_blocks.some(b => b.block_type === 'image' || b.block_type === 'video');
