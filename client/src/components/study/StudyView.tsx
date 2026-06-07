@@ -519,7 +519,7 @@ export function StudyView() {
           onClick={() => setFlipped(!flipped)}
         >
           <div
-            className="relative transition-transform duration-300 ease-in-out min-h-[350px] sm:min-h-[500px]"
+            className="relative grid transition-transform duration-300 ease-in-out min-h-[350px] sm:min-h-[500px]"
             style={{
               transformStyle: 'preserve-3d',
               transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
@@ -527,7 +527,7 @@ export function StudyView() {
           >
             {/* FRONT FACE */}
             <div
-              className="card p-4 sm:p-6 absolute inset-0 flex flex-col"
+              className="card p-4 sm:p-6 col-start-1 row-start-1 flex flex-col"
               style={{ backfaceVisibility: 'hidden' }}
             >
               {/* Top bar: slot dots + SR badge */}
@@ -585,7 +585,7 @@ export function StudyView() {
 
             {/* BACK FACE */}
             <div
-              className="card p-4 sm:p-6 absolute inset-0 flex flex-col"
+              className="card p-4 sm:p-6 [grid-area:1/1] flex flex-col"
               style={{
                 backfaceVisibility: 'hidden',
                 transform: 'rotateY(180deg)',
