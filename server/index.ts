@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { initDb } from './db/index.js';
 import logger from './logger.js';
@@ -44,7 +45,22 @@ app.use(helmet({
 }));
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// User-uploaded media. In production UPLOADS_DIR points at the persistent
+// Azure Files share (e.g. /app/data/uploads) so uploads survive cold starts
+// and deploys — without it, the container's ephemeral disk is wiped on every
+// restart and image/audio/video attachments 404 (DB rows outlive the files).
+// SEED_UPLOADS_DIR holds the SVGs baked into the image (sld-*.svg); it is
+// served as a fallback so those shipped assets keep resolving even when
+// UPLOADS_DIR is moved off the image onto the volume.
+const SEED_UPLOADS_DIR = path.join(__dirname, 'uploads');
+const UPLOADS_DIR = process.env.UPLOADS_DIR || SEED_UPLOADS_DIR;
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+app.use('/uploads', express.static(UPLOADS_DIR));
+if (path.resolve(UPLOADS_DIR) !== path.resolve(SEED_UPLOADS_DIR)) {
+  app.use('/uploads', express.static(SEED_UPLOADS_DIR));
+}
 
 app.use('/api/topics', topicsRouter);
 app.use('/api', setsRouter);

@@ -8,7 +8,9 @@ import { v4 as uuid } from 'uuid';
 import logger from '../logger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
+// Must match the upload-serving dir in index.ts. In production UPLOADS_DIR is
+// the persistent Azure Files share so uploads survive restarts/deploys.
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '..', 'uploads');
 
 // Ensure uploads directory exists
 if (!fs.existsSync(UPLOADS_DIR)) {
